@@ -15,6 +15,7 @@ seaborn = "==0.12.2"
 sentinelhub = "==3.9.1"
 PyYAML = "==6.0.1"
 tqdm = "==4.66.1"
+python-dotenv = "==1.0.0"
 
 [requires]
 python_version = "3.11"

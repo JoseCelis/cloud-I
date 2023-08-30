@@ -1,10 +1,9 @@
+import os
 import yaml
 import logging
 from tqdm import tqdm
+from dotenv import load_dotenv, find_dotenv
 from sentinelhub import CRS, BBox, DataCollection, MimeType, SentinelHubRequest, SHConfig, generate_evalscript
-
-logging.basicConfig()
-logging.getLogger().setLevel(logging.INFO)
 
 
 def read_yaml_file(filename):
@@ -19,9 +18,9 @@ def load_credentials():
     :return:
     """
     config = SHConfig()
-    if CLIENT_ID and CLIENT_SECRET:
-        config.sh_client_id = CLIENT_ID
-        config.sh_client_secret = CLIENT_SECRET
+    if os.getenv('CLIENT_ID') and os.getenv('CLIENT_SECRET'):
+        config.sh_client_id = os.getenv('CLIENT_ID')
+        config.sh_client_secret = os.getenv('CLIENT_SECRET')
     return config
 
 
@@ -29,9 +28,8 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config):
     """
     max_values = {MimeType.TIFF: 65535, MimeType.PNG: 255, MimeType.JPG: 255, MimeType.JP2: 10000}
     :param bbox: bounding box
-    :param sh_config: sentinel hub config filled with the credentials
     :param im_date:
-    :param data_collection: predefined data collections, which are the most commonly used with Sentinel Hub service.
+    :param sh_config: sentinel hub config filled with the credentials
     :return:
     """
     data_collection = DataCollection.SENTINEL2_L2A
@@ -67,4 +65,7 @@ def main():
 
 
 if __name__ == "__main__":
+    load_dotenv(find_dotenv())
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.INFO)
     main()
