@@ -120,8 +120,6 @@ def main():
     fig.colorbar(f1, ax=ax[2])
 
 
-
-
     fig, ax = plt.subplots(1, 3, figsize=(25, 5))
     ax[0].imshow(tf.keras.utils.array_to_img(image), aspect="auto")
     ax[0].title.set_text("Processed Image")
@@ -142,12 +140,6 @@ def main():
     ax[2].set_ylabel('Y')
     fig.subplots_adjust(wspace=0.2)
     fig.colorbar(f2, ax=ax[2])
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
