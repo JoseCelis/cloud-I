@@ -1,5 +1,5 @@
 .idea/
 data/
 images/
-proprocessed_images/
+preprocessed_data/
 .env
