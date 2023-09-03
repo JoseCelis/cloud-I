@@ -59,6 +59,12 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config, data_folde
 
 
 def extract_tar_file(tar_file, path):
+    """
+    Extracts image and cloud probabilities to the folder of the request.
+    :param tar_file:
+    :param path:
+    :return:
+    """
     if tarfile.is_tarfile(os.path.join(path, tar_file)):
         opened_tar = tarfile.open(os.path.join(path, tar_file))
         opened_tar.extractall(path)
