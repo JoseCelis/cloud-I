@@ -57,6 +57,11 @@ def read_crop(image_file_name, crop=None, bands=None):
 
 
 def preprocess_image(image: np.array):
+    """
+    Calculates the log1p to reduce the variance and normalize to save the results in int8 format
+    :param image:
+    :return: norm_log_image
+    """
     log_image = np.log1p(image)
     min_rescaled_log_image = log_image - log_image.min()
     if min_rescaled_log_image.max() != 0:
@@ -68,6 +73,12 @@ def preprocess_image(image: np.array):
 
 
 def preprocess_mask(mask: np.array, threshold_prob: float):
+    """
+    Creates binary file using threshold_prob
+    :param mask:
+    :param threshold_prob:
+    :return: binary mask
+    """
     binary_mask = (mask > threshold_prob).astype(int)
     binary_mask = binary_mask.transpose((1, 2, 0))
     binary_mask = binary_mask.astype(np.uint8)

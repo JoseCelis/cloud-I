@@ -1,6 +1,6 @@
 .idea/
 data/
-fotos_cloud/
 images/
-proprocessed_images/
+preprocessed_data/
+settings/coords_config.yaml
 .env

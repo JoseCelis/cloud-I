@@ -39,9 +39,9 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config, data_folde
     data_collection = DataCollection.SENTINEL2_L2A
     evalscript = generate_evalscript(
         data_collection=data_collection,
-        meta_bands=["CLP"],
-        merged_bands_output="bands",
-        prioritize_dn=True
+        meta_bands=["CLP"],  # cloud probabilities
+        merged_bands_output="bands",  # all bands
+        prioritize_dn=True  # use Digital Numbers (DN)
     )
     request = SentinelHubRequest(
         evalscript=evalscript,
@@ -59,6 +59,12 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config, data_folde
 
 
 def extract_tar_file(tar_file, path):
+    """
+    Extracts image and cloud probabilities to the folder of the request.
+    :param tar_file:
+    :param path:
+    :return:
+    """
     if tarfile.is_tarfile(os.path.join(path, tar_file)):
         opened_tar = tarfile.open(os.path.join(path, tar_file))
         opened_tar.extractall(path)
