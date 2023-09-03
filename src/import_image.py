@@ -1,9 +1,13 @@
 import os
+import sys
 import yaml
 import logging
+import tarfile
 from tqdm import tqdm
 from dotenv import load_dotenv, find_dotenv
 from sentinelhub import CRS, BBox, DataCollection, MimeType, SentinelHubRequest, SHConfig, generate_evalscript
+
+sys.path.append(os.getcwd())
 
 
 def read_yaml_file(filename):
@@ -24,7 +28,7 @@ def load_credentials():
     return config
 
 
-def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config):
+def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config, data_folder='data'):
     """
     max_values = {MimeType.TIFF: 65535, MimeType.PNG: 255, MimeType.JPG: 255, MimeType.JP2: 10000}
     :param bbox: bounding box
@@ -47,21 +51,31 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config):
         bbox=bbox,
         resolution=(10, 10),
         config=sh_config,
-        data_folder='data'
+        data_folder=data_folder
     )
     logging.debug(f'Downloading image from coordinates {bbox}')
-    data = request.get_data(save_data=True)[0]
-    # bands = data['bands.tif']
-    # maskP = data['CLP.tif']
+    _ = request.get_data(save_data=True)[0]
     return None
 
 
+def extract_tar_file(tar_file, path):
+    if tarfile.is_tarfile(os.path.join(path, tar_file)):
+        opened_tar = tarfile.open(os.path.join(path, tar_file))
+        opened_tar.extractall(path)
+        opened_tar.close()
+    else:
+        print("The tar file you entered is not a tar file")
+
+
 def main():
+    images_folder = 'data'
     sh_config = load_credentials()
     bbox_dicts = read_yaml_file("settings/coordinates.yaml")
     for bbox_dict in tqdm(bbox_dicts):
         bbox = BBox(tuple(bbox_dict['coords']), crs=CRS(bbox_dict['CRS']))
-        request_image_and_mask_to_sentinel2_L2A(bbox, bbox_dict['date'], sh_config)
+        request_image_and_mask_to_sentinel2_L2A(bbox, bbox_dict['date'], sh_config, data_folder=images_folder)
+    logging.info('Extracting .tar files . . .')
+    [extract_tar_file('response.tar', os.path.join(images_folder, path)) for path in os.listdir(images_folder)]
 
 
 if __name__ == "__main__":
