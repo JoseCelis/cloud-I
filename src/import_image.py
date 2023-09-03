@@ -19,7 +19,7 @@ def read_yaml_file(filename):
 def load_credentials():
     """
     load the credentials and fill the sentinel hub config
-    :return:
+    :return: configuration credentials
     """
     config = SHConfig()
     if os.getenv('CLIENT_ID') and os.getenv('CLIENT_SECRET'):
@@ -32,9 +32,9 @@ def request_image_and_mask_to_sentinel2_L2A(bbox, im_date, sh_config, data_folde
     """
     max_values = {MimeType.TIFF: 65535, MimeType.PNG: 255, MimeType.JPG: 255, MimeType.JP2: 10000}
     :param bbox: bounding box
-    :param im_date:
+    :param im_date: Date of the image
     :param sh_config: sentinel hub config filled with the credentials
-    :return:
+    :return: None
     """
     data_collection = DataCollection.SENTINEL2_L2A
     evalscript = generate_evalscript(
