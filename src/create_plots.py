@@ -2,9 +2,9 @@ import os
 import sys
 import rasterio
 import numpy as np
-from tqdm import tqdm
 from matplotlib import pyplot as plt
-
+import tensorflow as tf
+import seaborn as sns
 
 sys.path.append(os.getcwd())
 
@@ -89,15 +89,57 @@ def main():
     bands = [3, 2, 1]
     threshold_prob = 0.4  # bit we use to detect as truth in the mask files
 
-    images_list = list_image_files(input_images_folder)
+    image_mask_pair = list_image_files(input_images_folder)[0]
     os.makedirs(preprocessed_image_folder, exist_ok=True)
-    for counter, image_mask_pair in tqdm(enumerate(images_list)):
-        image, _ = read_crop(image_mask_pair[0], bands=bands)
-        mask, _ = read_crop(image_mask_pair[1], bands=[1])
-        image = preprocess_image(image)
-        mask = preprocess_mask(mask, threshold_prob)
-        np.save(os.path.join(preprocessed_image_folder, f"RGB_{counter}.npy"), image)
-        np.save(os.path.join(preprocessed_image_folder, f"MASK_{counter}.npy"), mask)
+    raw_image, _ = read_crop(image_mask_pair[0], bands=bands)
+    cl_probs, _ = read_crop(image_mask_pair[1], bands=[1])
+    image = preprocess_image(raw_image)
+    mask = preprocess_mask(cl_probs, threshold_prob)
+    print('helloo')
+
+
+    fig, ax = plt.subplots(1, 3, figsize=(25, 5))
+    ax[0].imshow(tf.keras.utils.array_to_img(raw_image.transpose((1, 2, 0))), aspect="auto")
+    ax[0].title.set_text("Raw Image")
+    ax[0].set_xlabel('X')
+    ax[0].set_ylabel('Y')
+
+    ax[1].hist(raw_image[0].flatten(), bins=100, color='red', alpha=0.5, label='Red band')
+    ax[1].hist(raw_image[1].flatten(), bins=100, color='green', alpha=0.5, label='Green band')
+    ax[1].hist(raw_image[2].flatten(), bins=100, color='blue', alpha=0.5, label='Blue band')
+    ax[1].title.set_text("Bands distribution in Raw Image")
+    ax[1].legend(loc="upper right")
+    ax[1].set_xlabel('Digital Numbers')
+    ax[1].set_ylabel('Counts')
+
+    f1 = ax[2].imshow(tf.keras.utils.array_to_img(cl_probs.transpose((1, 2, 0))), cmap='gray', aspect="auto", vmin=0, vmax=255)
+    ax[2].title.set_text("Cloud probabilities")
+    ax[2].set_xlabel('X')
+    ax[2].set_ylabel('Y')
+    fig.subplots_adjust(wspace=0.2)
+    fig.colorbar(f1, ax=ax[2])
+
+
+    fig, ax = plt.subplots(1, 3, figsize=(25, 5))
+    ax[0].imshow(tf.keras.utils.array_to_img(image), aspect="auto")
+    ax[0].title.set_text("Processed Image")
+    ax[0].set_xlabel('X')
+    ax[0].set_ylabel('Y')
+
+    ax[1].hist(image[0].flatten(), bins=50, color='red', alpha=0.5, label='Red band')
+    ax[1].hist(image[1].flatten(), bins=50, color='green', alpha=0.5, label='Green band')
+    ax[1].hist(image[2].flatten(), bins=50, color='blue', alpha=0.5, label='Blue band')
+    ax[1].title.set_text("Bands distribution in Processed Image")
+    ax[1].legend(loc="upper right")
+    ax[1].set_xlabel('Pixel values')
+    ax[1].set_ylabel('Counts')
+
+    f2 = ax[2].imshow(tf.keras.utils.array_to_img(mask), cmap='gray', aspect="auto", vmin=0, vmax=1)
+    ax[2].title.set_text("Cloud mask")
+    ax[2].set_xlabel('X')
+    ax[2].set_ylabel('Y')
+    fig.subplots_adjust(wspace=0.2)
+    fig.colorbar(f2, ax=ax[2])
 
 
 if __name__ == "__main__":
