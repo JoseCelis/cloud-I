@@ -1,5 +1,7 @@
 # cloud-I
 
+Blog post explaining this project in more detail can be found [HERE](https://medium.com/p/b553e6576af6/edit).
+
 ## Description
 
 Set of ML algorithms for cloud detection in stellite images trained using Sentinel-2 imagery. 
