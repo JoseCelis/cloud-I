@@ -84,19 +84,21 @@ def preprocess_mask(mask: np.array, threshold_prob: float):
 
 
 def main():
-    input_images_folder = 'data'
+    input_images_folder = 'failure'
     preprocessed_image_folder = 'preprocessed_data'
     bands = [3, 2, 1]
     threshold_prob = 0.4  # bit we use to detect as truth in the mask files
 
-    image_mask_pair = list_image_files(input_images_folder)[0]
-    os.makedirs(preprocessed_image_folder, exist_ok=True)
-    raw_image, _ = read_crop(image_mask_pair[0], bands=bands)
-    cl_probs, _ = read_crop(image_mask_pair[1], bands=[1])
-    image = preprocess_image(raw_image)
-    mask = preprocess_mask(cl_probs, threshold_prob)
-    print('helloo')
-
+    image_mask_pairs = list_image_files(input_images_folder)
+    for image_mask_pair in image_mask_pairs:
+        # os.makedirs(preprocessed_image_folder, exist_ok=True)
+        raw_image, _ = read_crop(image_mask_pair[0], bands=bands)
+        cl_probs, _ = read_crop(image_mask_pair[1], bands=[1])
+        image = preprocess_image(raw_image)
+        mask = preprocess_mask(cl_probs, threshold_prob)
+        print('unique raw image:', np.unique(raw_image))
+        print('unique cloud probs:', np.unique(cl_probs))
+        print(image_mask_pair)
 
     fig, ax = plt.subplots(1, 3, figsize=(25, 5))
     ax[0].imshow(tf.keras.utils.array_to_img(raw_image.transpose((1, 2, 0))), aspect="auto")
