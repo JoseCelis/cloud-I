@@ -83,6 +83,35 @@ def preprocess_mask(mask: np.array, threshold_prob: float):
     return binary_mask
 
 
+def augment_data(image, mask):
+    """
+    We perform rotations and flips to increase the number of images, for every image we read, we get 5 extra ones
+    90, 180, 270, vertical_flip, horizontal_flip
+    """
+    image_list, mask_list = [], []
+    image_list.append(image)
+    mask_list.append(mask)
+    image_list.append(np.rot90(image))
+    mask_list.append(np.rot90(mask))
+    image_list.append(np.rot90(np.rot90(image)))
+    mask_list.append(np.rot90(np.rot90(mask)))
+    image_list.append(np.rot90(np.rot90(np.rot90(image))))
+    mask_list.append(np.rot90(np.rot90(np.rot90(mask))))
+    image_list.append(np.flip(image, 0))
+    mask_list.append(np.flip(mask, 0))
+    image_list.append(np.flip(image, 1))
+    mask_list.append(np.flip(mask, 1))
+    return image_list, mask_list
+
+
+def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, n_files):
+    for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
+        counter_batch = i * n_files + counter
+        np.save(os.path.join(preprocessed_image_folder, f"RGB_{counter_batch}.npy"), image_maks_pair[0])
+        np.save(os.path.join(preprocessed_image_folder, f"MASK_{counter_batch}.npy"), image_maks_pair[1])
+    return None
+
+
 def main():
     input_images_folder = 'data'
     preprocessed_image_folder = 'preprocessed_data'
@@ -96,8 +125,8 @@ def main():
         mask, _ = read_crop(image_mask_pair[1], bands=[1])
         image = preprocess_image(image)
         mask = preprocess_mask(mask, threshold_prob)
-        np.save(os.path.join(preprocessed_image_folder, f"RGB_{counter}.npy"), image)
-        np.save(os.path.join(preprocessed_image_folder, f"MASK_{counter}.npy"), mask)
+        aug_image_list, aug_mask_list = augment_data(image, mask)
+        save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, len(images_list))
 
 
 if __name__ == "__main__":
