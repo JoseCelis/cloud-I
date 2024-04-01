@@ -3,25 +3,25 @@ import mlflow
 import logging
 import numpy as np
 import tensorflow as tf
-from abc import ABC, abstractmethod
+from abc import ABC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from keras.models import Sequential
 from keras.utils import to_categorical
 from keras.layers import Dense, Input, InputLayer, Flatten
+from time import gmtime, strftime
 
 
 class Model(ABC):
     def __init__(self):
-        # mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME"))  # it reads the env variables
+        mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME"), f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
         self.data_path = 'preprocessed_data/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
 
     def mlflow_report(self, params, metrics):
-        mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME"))  # it reads the env variables
-
+        logging.info(f'params: {params}\nmetrics: {metrics}')
         with mlflow.start_run(run_name="experiment 1") as run:
             mlflow.set_tag("mlflow.runName", "experiment 1")
             mlflow.log_params(params)
@@ -47,8 +47,8 @@ class Model(ABC):
         targets_list = []
         logging.info('reading processed images and masks.')
         X, y = self.list_image_files()
-        # for image_filename, target_filename in list(zip(X, y))[:10]:
-        for image_filename, target_filename in list(zip(X, y)):
+        for image_filename, target_filename in list(zip(X, y))[:10]:
+        # for image_filename, target_filename in list(zip(X, y) ):
             try:
                 image_array = np.load(os.path.join("preprocessed_data", image_filename))
                 target_array = np.load(os.path.join("preprocessed_data", target_filename))
@@ -86,6 +86,7 @@ class Model(ABC):
 class ANN_model(Model):
     def __init__(self):
         super().__init__()
+        self.algorithm = 'ANN'
         self.model = Sequential()
 
     @staticmethod
@@ -102,9 +103,8 @@ class ANN_model(Model):
         self.model.add(Dense(units=2, activation='softmax'))
         self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
         self.model.summary()
-        self.model.fit(df_train, label_cat_train, batch_size=256,
-                       validation_data=(df_validation, label_cat_validation),
-                       epochs=8, verbose=2, workers=-1)
+        self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
+                       batch_size=256, epochs=8, workers=-1)
         return None
 
     def make_predictions(self, df_validation):
@@ -116,7 +116,8 @@ class ANN_model(Model):
         datasets_list, targets_list = self.append_images(model='ANN')
         dataset = np.concatenate(datasets_list, axis=0)
         target = np.concatenate(targets_list, axis=0)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(dataset, target)
+        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
+            dataset, target, model=self.algorithm)
         label_cat_train, label_cat_validation = self.make_target_cat(target_bin_train, target_bin_validation)
         self.train(df_train, label_cat_train, df_validation, label_cat_validation)
         self.make_predictions(df_validation)
@@ -125,6 +126,7 @@ class ANN_model(Model):
 class RF_model(Model):
     def __init__(self):
         super().__init__()
+        self.algorithm = 'RF'
         self.model = RandomForestClassifier(random_state=self.seed, n_jobs=-2)
 
     def train(self, df_train, target_bin_train, df_validation, target_bin_validation):
@@ -138,10 +140,11 @@ class RF_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model='RF')
+        datasets_list, targets_list = self.append_images(model=self.algorithm)
         dataset = np.concatenate(datasets_list, axis=0)
         target = np.concatenate(targets_list, axis=0)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(dataset, target)
+        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
+            dataset, target, model=self.algorithm)
         self.train(df_train, target_bin_train, df_validation, target_bin_validation)
         self.make_predictions(df_validation)
 
@@ -149,15 +152,16 @@ class RF_model(Model):
 class UNET_model(Model):
     def __init__(self):
         super().__init__()
+        self.algorithm = 'UNET'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
         output = self.decoder(encoder_list, num_classes=1)
         self.model = tf.keras.Model(inputs=input_layer, outputs=output)
 
     @staticmethod
-    def encoder(input):
+    def encoder(encoder_input):
         c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(
-            input)
+            encoder_input)
         c1 = tf.keras.layers.Dropout(0.1)(c1)
         c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
         b1 = tf.keras.layers.BatchNormalization()(c1)
@@ -227,6 +231,102 @@ class UNET_model(Model):
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
+        params = {"batch_size": 32, "epochs": 8}
+        self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
+                       **params)
+        return params
+
+    def make_predictions(self, df_validation):
+        logging.info('Doing predictions')
+        predictions = self.model.predict(df_validation)
+        return predictions
+
+    def run(self):
+        datasets_list, targets_list = self.append_images(model=self.algorithm)
+        dataset = np.array(datasets_list)
+        target = np.array(targets_list)
+        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
+            dataset, target, model=self.algorithm)
+        params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
+        # self.make_predictions(df_validation)
+        metrics = {"train loss", np.round(self.model.history.history["loss"][-1], 2),
+                   "validation loss", np.round(self.model.history.history["val_loss"][-1], 2)}
+        self.mlflow_report(params, metrics)
+
+
+class FCN_model(Model):
+    def __init__(self):
+        super().__init__()
+        self.algorithm = 'FCN'
+        input_layer = tf.keras.layers.Input(shape=(None, None, 3))
+        encoder_list = self.encoder(input_layer)
+        output = self.decoder(encoder_list, num_classes=1)
+        self.model = tf.keras.Model(inputs=input_layer, outputs=output)
+
+    @staticmethod
+    def encoder(encoder_input):
+        c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(
+            encoder_input)
+        c1 = tf.keras.layers.Dropout(0.1)(c1)
+        c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
+        p1 = tf.keras.layers.MaxPooling2D((2, 2))(c1)
+
+        c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p1)
+        c2 = tf.keras.layers.Dropout(0.1)(c2)
+        c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c2)
+        p2 = tf.keras.layers.MaxPooling2D((2, 2))(c2)
+
+        c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p2)
+        c3 = tf.keras.layers.Dropout(0.2)(c3)
+        c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c3)
+        p3 = tf.keras.layers.MaxPooling2D((2, 2))(c3)
+
+        c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p3)
+        c4 = tf.keras.layers.Dropout(0.2)(c4)
+        c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c4)
+        p4 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(c4)
+
+        c5 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p4)
+        c5 = tf.keras.layers.Dropout(0.2)(c5)
+        c5 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c5)
+        p5 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(c5)
+
+        c6 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p5)
+        c6 = tf.keras.layers.Dropout(0.3)(c6)
+        c6 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
+
+        u6 = tf.keras.layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c6)
+        c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u6)
+        c6 = tf.keras.layers.Dropout(0.2)(c6)
+        c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
+        return c6
+
+    @staticmethod
+    def decoder(encoder_output, num_classes):
+        u7 = tf.keras.layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(encoder_output)
+        c7 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u7)
+        # Adding the result of the deconvolution and convolution layers improves the segmentation detail.
+        c7 = tf.keras.layers.Add()([u7, c7])  # Returns the sum of layers
+
+        u8 = tf.keras.layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(c7)
+        c8 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u8)
+        c8 = tf.keras.layers.Add()([u8, c8])
+
+        u9 = tf.keras.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c8)
+        c9 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u9)
+        c9 = tf.keras.layers.Add()([u9, c9])
+
+        u10 = tf.keras.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c9)
+        c10 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u10)
+        c10 = tf.keras.layers.Add()([u10, c10])
+
+        outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='sigmoid')(c10)
+        return outputs
+
+    def train(self, X_train, y_train, X_validation, y_validation):
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
+                     tf.keras.callbacks.TensorBoard(log_dir='logs')]
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation),
                        batch_size=32, epochs=8, callbacks=callbacks)
 
@@ -236,14 +336,10 @@ class UNET_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model='UNET')
+        datasets_list, targets_list = self.append_images(model=self.algorithm)
         dataset = np.array(datasets_list)
         target = np.array(targets_list)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(dataset, target,
-                                                                                                       model='UNET')
+        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
+            dataset, target, model=self.algorithm)
         self.train(df_train, target_bin_train, df_validation, target_bin_validation)
         self.make_predictions(df_validation)
-
-        params = {"epochs": 150, "dropout": 0.1, "learning_rate": 0.01, "number of hidden dense layers": 2}
-        metrics = {"categorical cross entropy train", np.round(model_history.history["loss"][-1], 2),
-                   "categorical cross entropy test", np.round(model_history.history["val_loss"][-1], 2)}

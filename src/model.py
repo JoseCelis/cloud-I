@@ -3,17 +3,16 @@ import sys
 import logging
 import numpy as np
 sys.path.append(os.getcwd())
-from src.model_class import ANN_model, RF_model, UNET_model
+from src.model_class import ANN_model, RF_model, UNET_model, FCN_model
 
 
 def main():
     logging.info('starting model')
-    # ann_model = ANN_model()
-    # ann_model.run()
-    # rf_model = RF_model()
-    # rf_model.run()
-    rf_model = UNET_model()
-    rf_model.run()
+    # model = ANN_model()
+    # model = RF_model()
+    model = UNET_model()
+    # model = FCN_model()
+    model.run()
 
 
 
