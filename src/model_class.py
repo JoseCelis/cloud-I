@@ -15,7 +15,7 @@ from time import gmtime, strftime
 
 class Model(ABC):
     def __init__(self):
-        mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME"), f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
+        mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}'))
         self.data_path = 'preprocessed_data/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
@@ -231,7 +231,7 @@ class UNET_model(Model):
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 8}
+        params = {"batch_size": 32, "epochs": 2}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -249,8 +249,8 @@ class UNET_model(Model):
             dataset, target, model=self.algorithm)
         params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
         # self.make_predictions(df_validation)
-        metrics = {"train loss", np.round(self.model.history.history["loss"][-1], 2),
-                   "validation loss", np.round(self.model.history.history["val_loss"][-1], 2)}
+        metrics = {"train loss": np.round(self.model.history.history["loss"][-1], 2),
+                   "validation loss": np.round(self.model.history.history["val_loss"][-1], 2)}
         self.mlflow_report(params, metrics)
 
 
