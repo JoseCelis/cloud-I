@@ -4,3 +4,4 @@ images/
 preprocessed_data/
 settings/coords_config.yaml
 .env
+Pipfile.lock
