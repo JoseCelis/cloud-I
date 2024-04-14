@@ -6,10 +6,9 @@ import tensorflow as tf
 from abc import ABC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from keras.models import Sequential
 from keras.utils import to_categorical
-from keras.layers import Dense, Input, InputLayer, Flatten
+from keras.layers import Dense
 from time import gmtime, strftime
 
 
@@ -75,6 +74,8 @@ class Model(ABC):
             df_train, df_validation, target_bin_train, target_bin_validation = train_test_split(
                 dataset, target_bin, test_size=fraction_val_set, random_state=self.seed, stratify=target_bin
             )
+            target_bin_train = np.ravel(target_bin_train)
+            target_bin_validation = np.ravel(target_bin_validation)
         else:
             all_indexes = np.arange(dataset.shape[0])
             val_indexes = np.random.randint(0, dataset.shape[0], int(dataset.shape[0] * fraction_val_set))

@@ -3,8 +3,6 @@ import sys
 import rasterio
 import numpy as np
 from tqdm import tqdm
-from matplotlib import pyplot as plt
-
 
 sys.path.append(os.getcwd())
 
