@@ -15,17 +15,20 @@ from time import gmtime, strftime
 
 class Model(ABC):
     def __init__(self):
-        mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}'))
+        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
+        mlflow.create_experiment(self.exp_name, artifact_location="s3://your-bucket")
+        mlflow.set_experiment(experiment_name=self.exp_name)
         self.data_path = 'preprocessed_data/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
 
-    def mlflow_report(self, params, metrics):
+    def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        with mlflow.start_run(run_name="experiment 1") as run:
-            mlflow.set_tag("mlflow.runName", "experiment 1")
+        with mlflow.start_run():
+            mlflow.set_tag("mlflow.runName", self.exp_name)
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
+            mlflow.keras.log_model(model, algorithm)
             mlflow.end_run()
         return None
 
@@ -251,7 +254,7 @@ class UNET_model(Model):
         # self.make_predictions(df_validation)
         metrics = {"train loss": np.round(self.model.history.history["loss"][-1], 2),
                    "validation loss": np.round(self.model.history.history["val_loss"][-1], 2)}
-        self.mlflow_report(params, metrics)
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class FCN_model(Model):

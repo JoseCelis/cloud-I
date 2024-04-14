@@ -9,18 +9,31 @@ Set of ML algorithms for cloud detection in stellite images trained using Sentin
 In this project we download and preprocess image files from the data collection SENTINEL2_L2A
 using sentinelhub.
 
-## Import images
-Downloads the images from remote repository using sentinelhub python package.
-Be sure you already requested your CLIENT_ID and CLIENT_SECRET.
-
-Once you have the credentials include them in a .env file stored in the root folder of
-this project, as it is shown here.
-
+### example .env
 ```commandline
 # sentinelhub credentials
 CLIENT_ID = "********************************"
 CLIENT_SECRET = "*******************************"
+
+# dagshub ML_FLOW credentials
+MLFLOW_TRACKING_URI="*******************************"
+MLFLOW_TRACKING_USERNAME="********"
+MLFLOW_TRACKING_PASSWORD="************************************"
 ```
 
+## Import images
+Downloads the images from remote repository using sentinelhub python package.
+Be sure you already requested your CLIENT_ID and CLIENT_SECRET.
+
+Once you have the credentials, include them in a .env file stored in the root folder of
+this project, as it is shown iin the example above.
+
 ## Preprocess
-Improves the brightness and contrast of the images using two transformations and creates cloud masks using the cloud probability file downloaded.
+Improves the brightness and contrast of the images using two transformations and creates cloud masks using the cloud 
+probability file downloaded.
+
+Data augmentation is done by rotating the pictures 90, 180 and 270 degrees, as well as vertical and horizontal flips.
+
+## Model
+Different models are implemeted: Rando Forest, ANN, FCNN, UNET.
+
