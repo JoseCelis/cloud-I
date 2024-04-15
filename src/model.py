@@ -1,18 +1,33 @@
+import click
 import os
 import sys
 import logging
-import numpy as np
 from dotenv import load_dotenv, find_dotenv
 sys.path.append(os.getcwd())
 from src.model_class import ANN_model, RF_model, UNET_model, FCN_model
 
 
-def main():
+@click.command()
+@click.option(
+    "--model_name",
+    required=True,
+    type=str,
+    help="It can be 'ann','rf', 'unet', 'fcn' or 'sam'.",
+)
+def main(model_name):
     logging.info('starting model')
-    # model = ANN_model()
-    # model = RF_model()
-    model = UNET_model()
-    # model = FCN_model()
+    if model_name == "ann":
+        model = ANN_model()
+    elif model_name == "rf":
+        model = RF_model()
+    elif model_name == "uner":
+        model = UNET_model()
+    elif model_name == "fcn":
+        model = FCN_model()
+    elif model_name == "sam":
+        model = "HERE ADD SAM MODEL"  # TODO: implement sam
+    else:
+        raise ValueError(f"model {model_name} not defined.")
     model.run()
 
 

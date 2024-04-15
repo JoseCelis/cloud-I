@@ -4,3 +4,7 @@ images/
 preprocessed_data/
 settings/coords_config.yaml
 .env
+Pipfile.lock
+mlruns/
+.DS_Store
+src/__pycache__/
