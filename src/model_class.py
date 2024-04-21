@@ -13,8 +13,8 @@ from time import gmtime, strftime
 
 
 class Model(ABC):
-    def __init__(self):
-        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
+    def __init__(self, model_name):
+        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
         mlflow.create_experiment(self.exp_name, artifact_location="s3://your-bucket")
         mlflow.set_experiment(experiment_name=self.exp_name)
         self.data_path = 'preprocessed_data/'
@@ -23,7 +23,7 @@ class Model(ABC):
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        with mlflow.start_run():
+        with mlflow.start_run(run_name=f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
@@ -96,7 +96,7 @@ class Model(ABC):
 
 class ANN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='ANN')
         self.algorithm = 'ANN'
         self.model = Sequential()
 
@@ -138,7 +138,7 @@ class ANN_model(Model):
 
 class RF_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='RF')
         self.algorithm = 'RF'
         self.model = RandomForestClassifier(random_state=self.seed, n_jobs=-2)
 
@@ -182,7 +182,7 @@ class RF_model(Model):
 
 class UNET_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='UNET')
         self.algorithm = 'UNET'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
@@ -291,7 +291,7 @@ class UNET_model(Model):
 
 class FCN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='FCN')
         self.algorithm = 'FCN'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
