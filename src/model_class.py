@@ -51,8 +51,8 @@ class Model(ABC):
         targets_list = []
         logging.info('reading processed images and masks.')
         X, y = self.list_image_files()
-        for image_filename, target_filename in list(zip(X, y))[:10]:
-        # for image_filename, target_filename in list(zip(X, y) ):
+        # for image_filename, target_filename in list(zip(X, y))[:10]:
+        for image_filename, target_filename in list(zip(X, y) ):
             try:
                 image_array = np.load(os.path.join("preprocessed_data", image_filename))
                 target_array = np.load(os.path.join("preprocessed_data", target_filename))
@@ -110,7 +110,7 @@ class ANN_model(Model):
         self.model.add(Dense(units=1, activation='softmax'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
-        params = {"batch_size": 256, "epochs": 2}  #  "epochs": 8
+        params = {"batch_size": 256, "epochs": 8}  #  "epochs": 8
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
