@@ -1,13 +1,13 @@
 import os
+import joblib
 import mlflow
 import logging
 import numpy as np
-import tensorflow as tf
 from abc import ABC
+import tensorflow as tf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from keras.models import Sequential
-from keras.utils import to_categorical
 from keras.layers import Dense
 from time import gmtime, strftime
 
@@ -15,19 +15,21 @@ from time import gmtime, strftime
 class Model(ABC):
     def __init__(self, model_name):
         self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
-        mlflow.create_experiment(self.exp_name, artifact_location="s3://your-bucket")
         mlflow.set_experiment(experiment_name=self.exp_name)
         self.data_path = 'preprocessed_data/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
+        os.makedirs('models', exist_ok=True)
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        with mlflow.start_run(run_name=f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}'):
+        joblib.dump(model, f'models/{algorithm}.pkl')
+        # mlflow.keras.log_model(model, algorithm)
+        with mlflow.start_run(run_name=f'run_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
-            # mlflow.keras.log_model(model, algorithm)
+            # mlflow.pyfunc.save_model()
             mlflow.end_run()
         return None
 
@@ -49,8 +51,8 @@ class Model(ABC):
         targets_list = []
         logging.info('reading processed images and masks.')
         X, y = self.list_image_files()
-        # for image_filename, target_filename in list(zip(X, y))[:10]:
-        for image_filename, target_filename in list(zip(X, y) ):
+        for image_filename, target_filename in list(zip(X, y))[:10]:
+        # for image_filename, target_filename in list(zip(X, y) ):
             try:
                 image_array = np.load(os.path.join("preprocessed_data", image_filename))
                 target_array = np.load(os.path.join("preprocessed_data", target_filename))
@@ -262,7 +264,7 @@ class UNET_model(Model):
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 2}
+        params = {"batch_size": 32, "epochs": 8}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -362,7 +364,7 @@ class FCN_model(Model):
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 2}  #  "epochs": 8
+        params = {"batch_size": 32, "epochs": 8}  #  "epochs": 8
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
