@@ -1,33 +1,35 @@
 import os
+import joblib
 import mlflow
 import logging
 import numpy as np
-import tensorflow as tf
 from abc import ABC
+import tensorflow as tf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from keras.models import Sequential
-from keras.utils import to_categorical
 from keras.layers import Dense
 from time import gmtime, strftime
 
 
 class Model(ABC):
-    def __init__(self):
-        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
-        mlflow.create_experiment(self.exp_name, artifact_location="s3://your-bucket")
+    def __init__(self, model_name):
+        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
         mlflow.set_experiment(experiment_name=self.exp_name)
         self.data_path = 'preprocessed_data/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
+        os.makedirs('models', exist_ok=True)
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        with mlflow.start_run():
+        joblib.dump(model, f'models/{algorithm}.pkl')
+        # mlflow.keras.log_model(model, algorithm)
+        with mlflow.start_run(run_name=f'run_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
-            mlflow.keras.log_model(model, algorithm)
+            # mlflow.pyfunc.save_model()
             mlflow.end_run()
         return None
 
@@ -49,8 +51,8 @@ class Model(ABC):
         targets_list = []
         logging.info('reading processed images and masks.')
         X, y = self.list_image_files()
-        for image_filename, target_filename in list(zip(X, y))[:10]:
-        # for image_filename, target_filename in list(zip(X, y) ):
+        # for image_filename, target_filename in list(zip(X, y))[:10]:
+        for image_filename, target_filename in list(zip(X, y) ):
             try:
                 image_array = np.load(os.path.join("preprocessed_data", image_filename))
                 target_array = np.load(os.path.join("preprocessed_data", target_filename))
@@ -74,8 +76,6 @@ class Model(ABC):
             df_train, df_validation, target_bin_train, target_bin_validation = train_test_split(
                 dataset, target_bin, test_size=fraction_val_set, random_state=self.seed, stratify=target_bin
             )
-            target_bin_train = np.ravel(target_bin_train)
-            target_bin_validation = np.ravel(target_bin_validation)
         else:
             all_indexes = np.arange(dataset.shape[0])
             val_indexes = np.random.randint(0, dataset.shape[0], int(dataset.shape[0] * fraction_val_set))
@@ -86,30 +86,34 @@ class Model(ABC):
             target_bin_validation = target_bin[val_indexes, :, :, :]
         return df_train, df_validation, target_bin_train, target_bin_validation
 
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        target = tf.cast(target, dtype=tf.float32)
+        prediction = tf.cast(prediction, dtype=tf.float32)
+        intersection = tf.reduce_sum(tf.multiply(target, prediction))
+        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection
+        iou_score = intersection / union
+        return iou_score
+
 
 class ANN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='ANN')
         self.algorithm = 'ANN'
         self.model = Sequential()
-
-    @staticmethod
-    def make_target_cat(target_bin_train, target_bin_validation):
-        label_cat_train = to_categorical(target_bin_train)
-        label_cat_validation = to_categorical(target_bin_validation)
-        return label_cat_train, label_cat_validation
 
     def train(self, df_train, label_cat_train, df_validation, label_cat_validation):
         logging.info('Training ANN model')
         self.model.add(Dense(units=10, input_dim=df_train.shape[1], activation='relu'))
         # model.add(Dense(units=10, activation='relu'))
         self.model.add(Dense(units=8, activation='relu'))
-        self.model.add(Dense(units=2, activation='softmax'))
-        self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        self.model.add(Dense(units=1, activation='softmax'))
+        self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
+        params = {"batch_size": 256, "epochs": 8}  #  "epochs": 8
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
-                       batch_size=256, epochs=8, workers=-1)
-        return None
+                       workers=-1, **params)
+        return params
 
     def make_predictions(self, df_validation):
         logging.info('Doing predictions')
@@ -122,16 +126,30 @@ class ANN_model(Model):
         target = np.concatenate(targets_list, axis=0)
         df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
             dataset, target, model=self.algorithm)
-        label_cat_train, label_cat_validation = self.make_target_cat(target_bin_train, target_bin_validation)
-        self.train(df_train, label_cat_train, df_validation, label_cat_validation)
-        self.make_predictions(df_validation)
+        params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
+        # self.make_predictions(df_validation)
+        print(self.model.history.history.keys())
+        metrics = {
+            "train loss": np.round(self.model.history.history["loss"][-1], 2),
+            "validation loss": np.round(self.model.history.history["val_loss"][-1], 2),
+            "train iou": np.round(self.model.history.history["intersection_over_union"][-1], 2),
+            "validation iou": np.round(self.model.history.history["intersection_over_union"][-1], 2)
+        }
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class RF_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='RF')
         self.algorithm = 'RF'
         self.model = RandomForestClassifier(random_state=self.seed, n_jobs=-2)
+
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        intersection = np.logical_and(target, prediction)
+        union = np.logical_or(target, prediction)
+        iou_score = np.sum(intersection) / np.sum(union)
+        return iou_score
 
     def train(self, df_train, target_bin_train, df_validation, target_bin_validation):
         logging.info('Training RF model')
@@ -149,13 +167,24 @@ class RF_model(Model):
         target = np.concatenate(targets_list, axis=0)
         df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
             dataset, target, model=self.algorithm)
+        target_bin_train = np.ravel(target_bin_train)
+        target_bin_validation = np.ravel(target_bin_validation)
         self.train(df_train, target_bin_train, df_validation, target_bin_validation)
-        self.make_predictions(df_validation)
+        predictions_train = self.make_predictions(df_train)
+        predictions_validation = self.make_predictions(df_validation)
+        iou_score_train = self.intersection_over_union(target_bin_train, predictions_train)
+        iou_score_validation = self.intersection_over_union(target_bin_validation, predictions_validation)
+        params = {"rf_params": 'default params'}
+        metrics = {
+            "train iou": np.round(iou_score_train, 2),
+            "validation iou": np.round(iou_score_validation, 2)
+        }
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class UNET_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='UNET')
         self.algorithm = 'UNET'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
@@ -232,10 +261,10 @@ class UNET_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 2}
+        params = {"batch_size": 32, "epochs": 8}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -253,14 +282,18 @@ class UNET_model(Model):
             dataset, target, model=self.algorithm)
         params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
         # self.make_predictions(df_validation)
-        metrics = {"train loss": np.round(self.model.history.history["loss"][-1], 2),
-                   "validation loss": np.round(self.model.history.history["val_loss"][-1], 2)}
+        metrics = {
+            "train loss": np.round(self.model.history.history["loss"][-1], 2),
+            "validation loss": np.round(self.model.history.history["val_loss"][-1], 2),
+            "train iou": np.round(self.model.history.history["intersection_over_union"][-1], 2),
+            "validation iou": np.round(self.model.history.history["intersection_over_union"][-1], 2)
+        }
         self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class FCN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='FCN')
         self.algorithm = 'FCN'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
@@ -328,11 +361,13 @@ class FCN_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation),
-                       batch_size=32, epochs=8, callbacks=callbacks)
+        params = {"batch_size": 32, "epochs": 8}  #  "epochs": 8
+        self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
+                       **params)
+        return params
 
     def make_predictions(self, df_validation):
         logging.info('Doing predictions')
@@ -345,5 +380,12 @@ class FCN_model(Model):
         target = np.array(targets_list)
         df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
             dataset, target, model=self.algorithm)
-        self.train(df_train, target_bin_train, df_validation, target_bin_validation)
-        self.make_predictions(df_validation)
+        params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
+        # self.make_predictions(df_validation)
+        metrics = {
+            "train loss": np.round(self.model.history.history["loss"][-1], 2),
+            "validation loss": np.round(self.model.history.history["val_loss"][-1], 2),
+            "train iou": np.round(self.model.history.history["intersection_over_union"][-1], 2),
+            "validation iou": np.round(self.model.history.history["intersection_over_union"][-1], 2)
+        }
+        self.mlflow_report(self.algorithm, self.model, params, metrics)

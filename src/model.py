@@ -20,7 +20,7 @@ def main(model_name):
         model = ANN_model()
     elif model_name == "rf":
         model = RF_model()
-    elif model_name == "uner":
+    elif model_name == "unet":
         model = UNET_model()
     elif model_name == "fcn":
         model = FCN_model()
