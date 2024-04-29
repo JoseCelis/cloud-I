@@ -46,7 +46,7 @@ class Model(ABC):
         assert len(mask_files_val) == len(rgb_files_val), "The number of mask files and RGB files are different."
         return rgb_files_train, mask_files_train, rgb_files_val, mask_files_val
 
-    def data_target_append_list(self, X, y, model, subset='train'):
+    def append_lists_data_and_target(self, X, y, model, subset='train'):
         datasets_list = []
         targets_list = []
         for image_filename, target_filename in list(zip(X, y)):
@@ -63,7 +63,7 @@ class Model(ABC):
                 print("isna", image_filename)
         return datasets_list, targets_list
 
-    def load_train_val_data(self, model):
+    def load_train_val_data(self, model, is_test=False):
         """
         load target and validation data from Dataset folder
         :param model:
@@ -71,11 +71,14 @@ class Model(ABC):
         """
         logging.info('reading processed images and masks.')
         X_train, y_train, X_val, y_val = self.list_image_files()
-        size_train = 12
-        size_val = int(size_train * 0.7)
-        X_train, y_train, X_val, y_val = X_train[:size_train], y_train[:size_train], X_val[:size_val], y_val[:size_val]
-        datasets_train, targets_train = self.data_target_append_list(X_train, y_train, model, subset='train')
-        datasets_val, targets_val = self.data_target_append_list(X_val, y_val, model, subset='val')
+        # for test purposes, do not use all data
+        if is_test:
+            size_train = 12
+            size_val = int(size_train * 0.3)
+            X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
+                                              y_val[:size_val])
+        datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
+        datasets_val, targets_val = self.append_lists_data_and_target(X_val, y_val, model, subset='val')
         return datasets_train, targets_train, datasets_val, targets_val
 
     @staticmethod
