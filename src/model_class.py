@@ -1,33 +1,34 @@
 import os
+import joblib
 import mlflow
 import logging
 import numpy as np
-import tensorflow as tf
 from abc import ABC
+import tensorflow as tf
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 from keras.models import Sequential
-from keras.utils import to_categorical
 from keras.layers import Dense
 from time import gmtime, strftime
 
 
 class Model(ABC):
-    def __init__(self):
-        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{strftime("%Y%m%d%H%M%S", gmtime())}')
-        mlflow.create_experiment(self.exp_name, artifact_location="s3://your-bucket")
+    def __init__(self, model_name):
+        self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
         mlflow.set_experiment(experiment_name=self.exp_name)
-        self.data_path = 'preprocessed_data/'
+        self.data_path = 'Dataset/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
+        os.makedirs('models', exist_ok=True)
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        with mlflow.start_run():
+        joblib.dump(model, f'models/{algorithm}.pkl')
+        # mlflow.keras.log_model(model, algorithm)
+        with mlflow.start_run(run_name=f'run_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
-            mlflow.keras.log_model(model, algorithm)
+            # mlflow.pyfunc.save_model()
             mlflow.end_run()
         return None
 
@@ -37,79 +38,85 @@ class Model(ABC):
         :param images_folder:
         :return:
         """
-        rgb_files = [file for file in os.listdir(self.data_path) if 'RGB_' in file]
-        mask_files = [file for file in os.listdir(self.data_path) if 'MASK_' in file]
-        rgb_files.sort()
-        mask_files.sort()
-        assert len(mask_files) == len(rgb_files), "The number of mask files and RGB files are different. "
-        return rgb_files, mask_files
+        rgb_files_train = os.listdir(os.path.join(self.data_path, 'images/train/'))
+        rgb_files_val = os.listdir(os.path.join(self.data_path, 'images/val/'))
+        mask_files_train = os.listdir(os.path.join(self.data_path, 'masks/train/'))
+        mask_files_val = os.listdir(os.path.join(self.data_path, 'masks/val/'))
+        assert len(mask_files_train) == len(rgb_files_train), "The number of mask files and RGB files are different."
+        assert len(mask_files_val) == len(rgb_files_val), "The number of mask files and RGB files are different."
+        return rgb_files_train, mask_files_train, rgb_files_val, mask_files_val
 
-    def append_images(self, model):
+    def append_lists_data_and_target(self, X, y, model, subset='train'):
         datasets_list = []
         targets_list = []
-        logging.info('reading processed images and masks.')
-        X, y = self.list_image_files()
-        for image_filename, target_filename in list(zip(X, y))[:10]:
-        # for image_filename, target_filename in list(zip(X, y) ):
-            try:
-                image_array = np.load(os.path.join("preprocessed_data", image_filename))
-                target_array = np.load(os.path.join("preprocessed_data", target_filename))
-
-                if (np.sum(np.isnan(image_array)) == 0) and (np.sum(np.isinf(image_array)) == 0):
-                    if model in ['ANN', 'RF']:  # for these two models append l=as tables
-                        datasets_list.append(image_array.reshape(-1, image_array.shape[-1]))
-                        targets_list.append(target_array.reshape(-1, target_array.shape[-1]))
-                    else:
-                        datasets_list.append(image_array)
-                        targets_list.append(target_array)
+        for image_filename, target_filename in list(zip(X, y)):
+            image_array = np.load(os.path.join(self.data_path, f'images/{subset}/', image_filename))
+            target_array = np.load(os.path.join(self.data_path, f'masks/{subset}/', target_filename))
+            if (np.sum(np.isnan(image_array)) == 0) and (np.sum(np.isinf(image_array)) == 0):
+                if model in ['ANN', 'RF']:  # for these two models append l=as tables
+                    datasets_list.append(image_array.reshape(-1, image_array.shape[-1]))
+                    targets_list.append(target_array.reshape(-1, target_array.shape[-1]))
                 else:
-                    print("isna", image_filename)
-            except:
-                print("doesn't exist", image_filename)
+                    datasets_list.append(image_array)
+                    targets_list.append(target_array)
+            else:
+                print("isna", image_filename)
         return datasets_list, targets_list
 
-    def train_validation_split(self, dataset, target_bin, fraction_val_set=0.2, model='ANN'):
-        logging.info('Splitting data into train and validation')
-        if model in ['ANN', 'RF']:  # for these two models append l=as tables
-            df_train, df_validation, target_bin_train, target_bin_validation = train_test_split(
-                dataset, target_bin, test_size=fraction_val_set, random_state=self.seed, stratify=target_bin
-            )
-            target_bin_train = np.ravel(target_bin_train)
-            target_bin_validation = np.ravel(target_bin_validation)
-        else:
-            all_indexes = np.arange(dataset.shape[0])
-            val_indexes = np.random.randint(0, dataset.shape[0], int(dataset.shape[0] * fraction_val_set))
-            train_indexes = np.array(list(set(all_indexes) - set(val_indexes)))
-            df_train = dataset[train_indexes, :, :, :]
-            target_bin_train = target_bin[train_indexes, :, :, :]
-            df_validation = dataset[val_indexes, :, :, :]
-            target_bin_validation = target_bin[val_indexes, :, :, :]
-        return df_train, df_validation, target_bin_train, target_bin_validation
+    def load_train_val_data(self, model, is_test=False):
+        """
+        load target and validation data from Dataset folder
+        :param model:
+        :return:
+        """
+        logging.info('reading processed images and masks.')
+        X_train, y_train, X_val, y_val = self.list_image_files()
+        # for test purposes, do not use all data
+        if is_test:
+            size_train = 12
+            size_val = int(size_train * 0.3)
+            X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
+                                              y_val[:size_val])
+        datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
+        datasets_val, targets_val = self.append_lists_data_and_target(X_val, y_val, model, subset='val')
+        return datasets_train, targets_train, datasets_val, targets_val
 
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        target = tf.cast(target, dtype=tf.float32)
+        prediction = tf.cast(prediction, dtype=tf.float32)
+        intersection = tf.reduce_sum(tf.multiply(target, prediction))
+        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection
+        iou_score = intersection / union
+        return iou_score
+
+    @staticmethod
+    def get_metrics_tf(model):
+        return {
+            "train loss": np.round(model.history.history["loss"][-1], 2),
+            "validation loss": np.round(model.history.history["val_loss"][-1], 2),
+            "train iou": np.round(model.history.history["intersection_over_union"][-1], 2),
+            "validation iou": np.round(model.history.history["val_intersection_over_union"][-1], 2)
+        }
 
 class ANN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='ANN')
         self.algorithm = 'ANN'
         self.model = Sequential()
-
-    @staticmethod
-    def make_target_cat(target_bin_train, target_bin_validation):
-        label_cat_train = to_categorical(target_bin_train)
-        label_cat_validation = to_categorical(target_bin_validation)
-        return label_cat_train, label_cat_validation
 
     def train(self, df_train, label_cat_train, df_validation, label_cat_validation):
         logging.info('Training ANN model')
         self.model.add(Dense(units=10, input_dim=df_train.shape[1], activation='relu'))
         # model.add(Dense(units=10, activation='relu'))
         self.model.add(Dense(units=8, activation='relu'))
-        self.model.add(Dense(units=2, activation='softmax'))
-        self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        self.model.add(Dense(units=1, activation='softmax'))
+        self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
+        params = {"batch_size": 256, "epochs": 8}  # "epochs": 8
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
-                       batch_size=256, epochs=8, workers=-1)
-        return None
+                       workers=-1, **params)
+        return params
 
     def make_predictions(self, df_validation):
         logging.info('Doing predictions')
@@ -117,26 +124,47 @@ class ANN_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model='ANN')
-        dataset = np.concatenate(datasets_list, axis=0)
-        target = np.concatenate(targets_list, axis=0)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
-            dataset, target, model=self.algorithm)
-        label_cat_train, label_cat_validation = self.make_target_cat(target_bin_train, target_bin_validation)
-        self.train(df_train, label_cat_train, df_validation, label_cat_validation)
-        self.make_predictions(df_validation)
+        df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
+        df_train = np.concatenate(df_train, axis=0)
+        targets_train = np.concatenate(targets_train, axis=0)
+        df_val = np.concatenate(df_val, axis=0)
+        targets_val = np.concatenate(targets_val, axis=0)
+        params = self.train(df_train, targets_train, df_val, targets_val)
+        print(self.model.history.history.keys())
+        metrics = self.get_metrics_tf(self.model)
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class RF_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='RF')
         self.algorithm = 'RF'
-        self.model = RandomForestClassifier(random_state=self.seed, n_jobs=-2)
+        self.model = RandomForestClassifier(random_state=self.seed, n_jobs=-2, max_depth=5, verbose=2)
 
-    def train(self, df_train, target_bin_train, df_validation, target_bin_validation):
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        intersection = np.logical_and(target, prediction)
+        union = np.logical_or(target, prediction)
+        iou_score = np.sum(intersection) / np.sum(union)
+        return iou_score
+
+    def train(self, df_train, target_train, df_val, target_val):
         logging.info('Training RF model')
-        self.model.fit(df_train, target_bin_train)
-        return None
+        params = {"rf_params": 'default params'}
+        self.model.fit(df_train, target_train)
+        return params
+
+    def get_metrics_rf(self, df_train, targets_train, df_val, targets_val):
+        logging.info('Doing predictions')
+        predictions_train = self.model.predict(df_train)
+        predictions_validation = self.model.predict(df_val)
+        iou_score_train = self.intersection_over_union(targets_train, predictions_train)
+        iou_score_validation = self.intersection_over_union(targets_val, predictions_validation)
+        metrics = {
+            "train iou": np.round(iou_score_train, 2),
+            "validation iou": np.round(iou_score_validation, 2)
+        }
+        return metrics
 
     def make_predictions(self, df_validation):
         logging.info('Doing predictions')
@@ -144,18 +172,19 @@ class RF_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model=self.algorithm)
-        dataset = np.concatenate(datasets_list, axis=0)
-        target = np.concatenate(targets_list, axis=0)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
-            dataset, target, model=self.algorithm)
-        self.train(df_train, target_bin_train, df_validation, target_bin_validation)
-        self.make_predictions(df_validation)
+        df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
+        df_train = np.concatenate(df_train, axis=0)
+        targets_train = np.ravel(np.concatenate(targets_train, axis=0))
+        df_val = np.concatenate(df_val, axis=0)
+        targets_val = np.ravel(np.concatenate(targets_val, axis=0))
+        params = self.train(df_train, targets_train, df_val, targets_val)
+        metrics = self.get_metrics_rf(df_train, targets_train, df_val, targets_val)
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class UNET_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='UNET')
         self.algorithm = 'UNET'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
@@ -232,10 +261,10 @@ class UNET_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 2}
+        params = {"batch_size": 32, "epochs": 8}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -246,21 +275,19 @@ class UNET_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model=self.algorithm)
-        dataset = np.array(datasets_list)
-        target = np.array(targets_list)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
-            dataset, target, model=self.algorithm)
-        params = self.train(df_train, target_bin_train, df_validation, target_bin_validation)
-        # self.make_predictions(df_validation)
-        metrics = {"train loss": np.round(self.model.history.history["loss"][-1], 2),
-                   "validation loss": np.round(self.model.history.history["val_loss"][-1], 2)}
+        df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
+        df_train = np.array(df_train)
+        targets_train = np.array(targets_train)
+        df_val = np.array(df_val)
+        targets_val = np.array(targets_val)
+        params = self.train(df_train, targets_train, df_val, targets_val)
+        metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
 class FCN_model(Model):
     def __init__(self):
-        super().__init__()
+        super().__init__(model_name='FCN')
         self.algorithm = 'FCN'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
@@ -328,11 +355,13 @@ class FCN_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation),
-                       batch_size=32, epochs=8, callbacks=callbacks)
+        params = {"batch_size": 32, "epochs": 8}   # "epochs": 8
+        self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
+                       **params)
+        return params
 
     def make_predictions(self, df_validation):
         logging.info('Doing predictions')
@@ -340,10 +369,11 @@ class FCN_model(Model):
         return predictions
 
     def run(self):
-        datasets_list, targets_list = self.append_images(model=self.algorithm)
-        dataset = np.array(datasets_list)
-        target = np.array(targets_list)
-        df_train, df_validation, target_bin_train, target_bin_validation = self.train_validation_split(
-            dataset, target, model=self.algorithm)
-        self.train(df_train, target_bin_train, df_validation, target_bin_validation)
-        self.make_predictions(df_validation)
+        df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
+        df_train = np.array(df_train)
+        targets_train = np.array(targets_train)
+        df_val = np.array(df_val)
+        targets_val = np.array(targets_val)
+        params = self.train(df_train, targets_train, df_val, targets_val)
+        metrics = self.get_metrics_tf(self.model)
+        self.mlflow_report(self.algorithm, self.model, params, metrics)
