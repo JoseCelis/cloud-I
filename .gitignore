@@ -1,5 +1,6 @@
 .idea/
 data/
+Dataset/
 images/
 preprocessed_data/
 settings/coords_config.yaml

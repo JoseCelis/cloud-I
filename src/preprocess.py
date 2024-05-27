@@ -2,8 +2,8 @@ import os
 import sys
 import rasterio
 import numpy as np
-from PIL import Image
 from tqdm import tqdm
+import tensorflow as tf
 
 sys.path.append(os.getcwd())
 
@@ -15,7 +15,7 @@ def list_image_files(images_folder: str):
     :return:
     """
     bands_clp_list = [[os.path.join(images_folder, path, 'bands.tif'), os.path.join(images_folder, path, 'CLP.tif')]
-                      for path in os.listdir(images_folder)]
+                      for path in os.listdir(images_folder) if "." not in path]
     return bands_clp_list
 
 
@@ -108,9 +108,9 @@ def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mas
     mask_folder = preprocessed_image_folder.format(image_or_mask='masks')
     for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
         counter_batch = i * n_files + counter
-        img = Image.fromarray(image_maks_pair[0], mode="RGB")
+        img = tf.keras.utils.array_to_img(image_maks_pair[0])
         img.save(os.path.join(image_folder, f"{counter_batch}.png"))
-        mask = Image.fromarray(image_maks_pair[1], mode="1")
+        mask = tf.keras.utils.array_to_img(image_maks_pair[1])
         mask.save(os.path.join(mask_folder, f"{counter_batch}.png"))
     return None
 
