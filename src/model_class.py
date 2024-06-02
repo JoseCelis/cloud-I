@@ -15,14 +15,19 @@ class Model(ABC):
     def __init__(self, model_name):
         self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
         mlflow.set_experiment(experiment_name=self.exp_name)
-        self.data_path = 'Dataset/'
+        self.data_path = 'Dataset_npy/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
         os.makedirs('models', exist_ok=True)
+        self.model = None
+        self.algorithm = None
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        joblib.dump(model, f'models/{algorithm}.pkl')
+        if algorithm == 'RF':
+            joblib.dump(model, f'models/{algorithm}.pkl')
+        else:
+            tf.keras.models.save_model(model, f'models/{algorithm}.h5')
         # mlflow.keras.log_model(model, algorithm)
         with mlflow.start_run(run_name=f'run_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
@@ -63,7 +68,7 @@ class Model(ABC):
                 print("isna", image_filename)
         return datasets_list, targets_list
 
-    def load_train_val_data(self, model, is_test=False):
+    def load_train_val_data(self, model, is_test=True):
         """
         load target and validation data from Dataset folder
         :param model:
@@ -99,6 +104,26 @@ class Model(ABC):
             "validation iou": np.round(model.history.history["val_intersection_over_union"][-1], 2)
         }
 
+    def load_saved_model(self, algorithm):
+        logging.info('Doing predictions')
+        if algorithm != 'RF':
+            model = tf.keras.models.load_model(os.path.join('models', f'{algorithm}.h5'),
+                                               custom_objects={'intersection_over_union': self.intersection_over_union},
+                                               safe_mode=False)
+        else:
+            model = joblib.load(os.path.join('models', f'{algorithm}.pkl'))
+        return model
+
+    def make_predictions(self, df_validation, use_saved_model=True):
+        logging.info('Doing predictions')
+        if use_saved_model:
+            model = self.load_saved_model(self.algorithm)
+            predictions = model.predict(df_validation)
+        else:
+            predictions = self.model.predict(df_validation)
+        return predictions
+
+
 class ANN_model(Model):
     def __init__(self):
         super().__init__(model_name='ANN')
@@ -117,11 +142,6 @@ class ANN_model(Model):
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
-
-    def make_predictions(self, df_validation):
-        logging.info('Doing predictions')
-        predictions = self.model.predict(df_validation)
-        return predictions
 
     def run(self):
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
@@ -165,11 +185,6 @@ class RF_model(Model):
             "validation iou": np.round(iou_score_validation, 2)
         }
         return metrics
-
-    def make_predictions(self, df_validation):
-        logging.info('Doing predictions')
-        predictions = self.model.predict(df_validation)
-        return predictions
 
     def run(self):
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
@@ -269,11 +284,6 @@ class UNET_model(Model):
                        **params)
         return params
 
-    def make_predictions(self, df_validation):
-        logging.info('Doing predictions')
-        predictions = self.model.predict(df_validation)
-        return predictions
-
     def run(self):
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
         df_train = np.array(df_train)
@@ -362,11 +372,6 @@ class FCN_model(Model):
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
-
-    def make_predictions(self, df_validation):
-        logging.info('Doing predictions')
-        predictions = self.model.predict(df_validation)
-        return predictions
 
     def run(self):
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
