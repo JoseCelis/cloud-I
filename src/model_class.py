@@ -24,10 +24,6 @@ class Model(ABC):
 
     def mlflow_report(self, algorithm, model, params, metrics):
         logging.info(f'params: {params}\nmetrics: {metrics}')
-        if algorithm == 'RF':
-            joblib.dump(model, f'models/{algorithm}.pkl')
-        else:
-            tf.keras.models.save_model(model, f'models/{algorithm}.h5')
         # mlflow.keras.log_model(model, algorithm)
         with mlflow.start_run(run_name=f'run_{strftime("%Y%m%d%H%M%S", gmtime())}'):
             mlflow.set_tag("mlflow.runName", self.exp_name)
@@ -35,6 +31,11 @@ class Model(ABC):
             mlflow.log_metrics(metrics)
             # mlflow.pyfunc.save_model()
             mlflow.end_run()
+
+        if algorithm == 'RF':
+            joblib.dump(model, f'models/{algorithm}.pkl')
+        else:
+            tf.keras.models.save_model(model, f'models/{algorithm}.keras')
         return None
 
     def list_image_files(self):
@@ -78,8 +79,8 @@ class Model(ABC):
         X_train, y_train, X_val, y_val = self.list_image_files()
         # for test purposes, do not use all data
         if is_test:
-            size_train = 12
-            size_val = int(size_train * 0.3)
+            size_train = 200
+            size_val = int(size_train * 0.2)
             X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
                                               y_val[:size_val])
         datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
@@ -89,9 +90,9 @@ class Model(ABC):
     @staticmethod
     def intersection_over_union(target, prediction):
         target = tf.cast(target, dtype=tf.float32)
-        prediction = tf.cast(prediction, dtype=tf.float32)
-        intersection = tf.reduce_sum(tf.multiply(target, prediction))
-        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection
+        prediction = tf.cast(prediction > 0.5, dtype=tf.float32)  # model outputs probability
+        intersection = tf.reduce_sum(tf.multiply(target, prediction))  # logical and in tf
+        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection  # logical or in tf
         iou_score = intersection / union
         return iou_score
 
@@ -107,7 +108,7 @@ class Model(ABC):
     def load_saved_model(self, algorithm):
         logging.info('Doing predictions')
         if algorithm != 'RF':
-            model = tf.keras.models.load_model(os.path.join('models', f'{algorithm}.h5'),
+            model = tf.keras.models.load_model(os.path.join('models', f'{algorithm}.keras'),
                                                custom_objects={'intersection_over_union': self.intersection_over_union},
                                                safe_mode=False)
         else:
@@ -117,10 +118,12 @@ class Model(ABC):
     def make_predictions(self, df_validation, use_saved_model=True):
         logging.info('Doing predictions')
         if use_saved_model:
-            model = self.load_saved_model(self.algorithm)
-            predictions = model.predict(df_validation)
+            loaded_model = self.load_saved_model(self.algorithm)
+            predictions = loaded_model.predict(df_validation)
         else:
             predictions = self.model.predict(df_validation)
+        predictions = (predictions > 0.5).astype(np.uint8)
+        predictions = predictions[0] if self.algorithm in ['UNET', 'FCN'] else predictions
         return predictions
 
 
@@ -130,12 +133,20 @@ class ANN_model(Model):
         self.algorithm = 'ANN'
         self.model = Sequential()
 
+    # @staticmethod
+    # def intersection_over_union(target, prediction):
+    #     prediction = tf.cast(prediction > 0.5, tf.int8)  # model outputs probability
+    #     intersection = np.logical_and(target, prediction)
+    #     union = np.logical_or(target, prediction)
+    #     iou_score = np.sum(intersection) / np.sum(union)
+    #     return iou_score
+
     def train(self, df_train, label_cat_train, df_validation, label_cat_validation):
         logging.info('Training ANN model')
         self.model.add(Dense(units=10, input_dim=df_train.shape[1], activation='relu'))
         # model.add(Dense(units=10, activation='relu'))
         self.model.add(Dense(units=8, activation='relu'))
-        self.model.add(Dense(units=1, activation='softmax'))
+        self.model.add(Dense(units=1, activation='sigmoid'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
         params = {"batch_size": 256, "epochs": 8}  # "epochs": 8
@@ -205,6 +216,7 @@ class UNET_model(Model):
         encoder_list = self.encoder(input_layer)
         output = self.decoder(encoder_list, num_classes=1)
         self.model = tf.keras.Model(inputs=input_layer, outputs=output)
+        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
 
     @staticmethod
     def encoder(encoder_input):
@@ -276,10 +288,9 @@ class UNET_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
-        callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
+        callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 8}
+        params = {"batch_size": 12, "epochs": 20}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -293,6 +304,15 @@ class UNET_model(Model):
         params = self.train(df_train, targets_train, df_val, targets_val)
         metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
+
+        # test_image_array = np.load(f'Dataset_npy/test/RGB_4481.npy')
+        # input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
+        # test_image_array = test_image_array[tf.newaxis, :]
+        # test_mask_array = input_test_mask_array[tf.newaxis, :]
+        # predictions = self.model.predict(test_image_array)
+        # predictions = (predictions > 0.5).astype(np.uint8)
+        # iou_score = self.intersection_over_union(test_mask_array, predictions)
+        # plot_results(test_image_array, input_test_mask_array, predictions, iou_score, self.algorithm)
 
 
 class FCN_model(Model):
@@ -366,9 +386,9 @@ class FCN_model(Model):
 
     def train(self, X_train, y_train, X_validation, y_validation):
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
-        callbacks = [tf.keras.callbacks.EarlyStopping(patience=5, monitor='val_loss'),
+        callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 32, "epochs": 8}   # "epochs": 8
+        params = {"batch_size": 12, "epochs": 20}   # "epochs": 8
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
