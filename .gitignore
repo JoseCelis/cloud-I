@@ -9,3 +9,4 @@ Pipfile.lock
 mlruns/
 .DS_Store
 src/__pycache__/
+*.pt

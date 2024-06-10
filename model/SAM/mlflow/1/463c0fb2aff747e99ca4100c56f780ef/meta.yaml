@@ -1,0 +1,15 @@
+artifact_uri: model/SAM/mlflow/1/463c0fb2aff747e99ca4100c56f780ef/artifacts
+end_time: 1716832710447
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+run_id: 463c0fb2aff747e99ca4100c56f780ef
+run_name: train
+run_uuid: 463c0fb2aff747e99ca4100c56f780ef
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1716832593627
+status: 3
+tags: []
+user_id: anamabo
