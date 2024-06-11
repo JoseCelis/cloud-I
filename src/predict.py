@@ -19,12 +19,12 @@ def plot_results(test_image_array, input_test_mask_array, predictions, iou_score
     ax[0].set_xlabel('X')
     ax[0].set_ylabel('Y')
 
-    ax[1].imshow(input_test_mask_array, interpolation='nearest', cmap='Greys')
+    ax[1].imshow(input_test_mask_array, interpolation='nearest', cmap='Greys_r')
     ax[1].title.set_text("Mask")
     ax[1].set_xlabel('X')
     ax[1].set_ylabel('Y')
 
-    ax[2].imshow(predictions.reshape(1024, 1024, 1), interpolation='nearest', cmap='Greys')
+    ax[2].imshow(predictions.reshape(1024, 1024, 1), interpolation='nearest', cmap='Greys_r')
     ax[2].title.set_text("Predicted Mask")
     ax[2].set_xlabel('X')
     ax[2].set_ylabel('Y')
@@ -53,7 +53,7 @@ def main(model_name):
         if model_name == 'rf':
             test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])
             test_mask_array = np.ravel(input_test_mask_array.reshape(-1, input_test_mask_array.shape[-1]))
-        elif model_name in 'ann':
+        elif model_name == 'ann':
             test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])
             test_mask_array = input_test_mask_array.reshape(-1, input_test_mask_array.shape[-1])
         else:

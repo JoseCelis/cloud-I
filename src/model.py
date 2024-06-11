@@ -17,19 +17,34 @@ from src.predict import plot_results
     type=str,
     help="It can be 'ann','rf', 'unet', 'fcn' or 'sam'.",
 )
-def main(model_name):
+@click.option(
+    "--use_weights",
+    required=False,
+    type=str,
+    default=None,
+    help="location of '.keras' file with the weights.",
+)
+def main(model_name, use_weights):
     logging.info('starting model')
 
     # TODO: implement sam
     model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'fcn': FCN_model()}
     if model_name in model_dict.keys():
         model = model_dict[model_name]
-        model.run()
+        model.run(use_weights=use_weights)
 
         test_image_array = np.load(f'Dataset_npy/test/RGB_4481.npy')
         input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
-        test_image_array = test_image_array[tf.newaxis, :]
-        test_mask_array = input_test_mask_array[tf.newaxis, :]
+        if model_name == 'rf':
+            test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])
+            test_mask_array = np.ravel(input_test_mask_array.reshape(-1, input_test_mask_array.shape[-1]))
+        elif model_name == 'ann':
+            test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])
+            test_mask_array = input_test_mask_array.reshape(-1, input_test_mask_array.shape[-1])
+        else:
+            test_image_array = test_image_array[tf.newaxis, :]
+            test_mask_array = input_test_mask_array[tf.newaxis, :]
+
         predictions = model.make_predictions(test_image_array, use_saved_model=False)
         iou_score = model.intersection_over_union(test_mask_array, predictions)
         plot_results(test_image_array, input_test_mask_array, predictions, iou_score, model_name)

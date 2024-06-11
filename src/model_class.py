@@ -9,6 +9,7 @@ from sklearn.ensemble import RandomForestClassifier
 from keras.models import Sequential
 from keras.layers import Dense
 from time import gmtime, strftime
+from keras.optimizers import Adam
 
 
 class Model(ABC):
@@ -79,8 +80,8 @@ class Model(ABC):
         X_train, y_train, X_val, y_val = self.list_image_files()
         # for test purposes, do not use all data
         if is_test:
-            size_train = 200
-            size_val = int(size_train * 0.2)
+            size_train = 10
+            size_val = int(size_train * 0.3)
             X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
                                               y_val[:size_val])
         datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
@@ -149,19 +150,21 @@ class ANN_model(Model):
         self.model.add(Dense(units=1, activation='sigmoid'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
-        params = {"batch_size": 256, "epochs": 8}  # "epochs": 8
+        params = {"batch_size": 10240, "epochs": 2}  # "epochs": 8
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
 
-    def run(self):
+    def run(self, use_weights=None):
+        if use_weights:
+            logging.info(f'loading weights from {use_weights}')
+            self.model.load_weights(use_weights)
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
         df_train = np.concatenate(df_train, axis=0)
         targets_train = np.concatenate(targets_train, axis=0)
         df_val = np.concatenate(df_val, axis=0)
         targets_val = np.concatenate(targets_val, axis=0)
         params = self.train(df_train, targets_train, df_val, targets_val)
-        print(self.model.history.history.keys())
         metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
 
@@ -197,7 +200,9 @@ class RF_model(Model):
         }
         return metrics
 
-    def run(self):
+    def run(self, use_weights=None):
+        if use_weights:
+            logging.info('Nothing to do for RF')
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
         df_train = np.concatenate(df_train, axis=0)
         targets_train = np.ravel(np.concatenate(targets_train, axis=0))
@@ -216,7 +221,8 @@ class UNET_model(Model):
         encoder_list = self.encoder(input_layer)
         output = self.decoder(encoder_list, num_classes=1)
         self.model = tf.keras.Model(inputs=input_layer, outputs=output)
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
+        optimizer = Adam(learning_rate=0.0005)
+        self.model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=[self.intersection_over_union])
 
     @staticmethod
     def encoder(encoder_input):
@@ -290,12 +296,15 @@ class UNET_model(Model):
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 12, "epochs": 20}
+        params = {"batch_size": 10, "epochs": 30}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
 
-    def run(self):
+    def run(self, use_weights=None):
+        if use_weights:
+            logging.info(f'loading weights from {use_weights}')
+            self.model.load_weights(use_weights)
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
         df_train = np.array(df_train)
         targets_train = np.array(targets_train)
@@ -304,15 +313,6 @@ class UNET_model(Model):
         params = self.train(df_train, targets_train, df_val, targets_val)
         metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
-
-        # test_image_array = np.load(f'Dataset_npy/test/RGB_4481.npy')
-        # input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
-        # test_image_array = test_image_array[tf.newaxis, :]
-        # test_mask_array = input_test_mask_array[tf.newaxis, :]
-        # predictions = self.model.predict(test_image_array)
-        # predictions = (predictions > 0.5).astype(np.uint8)
-        # iou_score = self.intersection_over_union(test_mask_array, predictions)
-        # plot_results(test_image_array, input_test_mask_array, predictions, iou_score, self.algorithm)
 
 
 class FCN_model(Model):
@@ -323,6 +323,8 @@ class FCN_model(Model):
         encoder_list = self.encoder(input_layer)
         output = self.decoder(encoder_list, num_classes=1)
         self.model = tf.keras.Model(inputs=input_layer, outputs=output)
+        optimizer = Adam(learning_rate=0.0005)
+        self.model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=[self.intersection_over_union])
 
     @staticmethod
     def encoder(encoder_input):
@@ -385,15 +387,17 @@ class FCN_model(Model):
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
-        self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[self.intersection_over_union])
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 12, "epochs": 20}   # "epochs": 8
+        params = {"batch_size": 10, "epochs": 30}   # "epochs": 8
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
 
-    def run(self):
+    def run(self, use_weights=None):
+        if use_weights:
+            logging.info(f'loading weights from {use_weights}')
+            self.model.load_weights(use_weights)
         df_train, targets_train, df_val, targets_val = self.load_train_val_data(model=self.algorithm)
         df_train = np.array(df_train)
         targets_train = np.array(targets_train)
