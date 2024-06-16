@@ -116,7 +116,7 @@ def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mas
 
 
 def main():
-    input_images_folder = 'data'
+    input_images_folder = 'data'  # images are in Digital Numbers (DN)
     dataset_folder = 'Dataset/'
     folder_structure_list = ['Dataset/images/train/', 'Dataset/images/val/', 'Dataset/masks/train/',
                              'Dataset/masks/val/']
