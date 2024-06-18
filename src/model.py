@@ -15,7 +15,7 @@ from src.predict import plot_results
     "--model_name",
     required=True,
     type=str,
-    help="It can be 'ann','rf', 'unet', 'fcn', 'deeplab' or 'segnet'.",
+    help="It can be 'ann','rf', 'unet' or 'segnet'.",
 )
 @click.option(
     "--use_weights",

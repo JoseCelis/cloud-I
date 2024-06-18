@@ -40,7 +40,7 @@ def plot_results(test_image_array, input_test_mask_array, predictions, iou_score
     "--model_name",
     required=True,
     type=str,
-    help="It can be 'ann','rf', 'unet', 'fcn' or 'sam'.",
+    help="It can be 'ann','rf', 'unet' or 'segnet'.",
 )
 def main(model_name):
     logging.info('starting model')

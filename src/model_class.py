@@ -124,7 +124,7 @@ class Model(ABC):
         else:
             predictions = self.model.predict(df_validation)
         predictions = (predictions > 0.5).astype(np.uint8)
-        predictions = predictions[0] if self.algorithm in ['UNET', 'FCN'] else predictions
+        predictions = predictions[0] if self.algorithm in ['UNET', 'SEGNET'] else predictions
         return predictions
 
 
@@ -133,14 +133,6 @@ class ANN_model(Model):
         super().__init__(model_name='ANN')
         self.algorithm = 'ANN'
         self.model = Sequential()
-
-    # @staticmethod
-    # def intersection_over_union(target, prediction):
-    #     prediction = tf.cast(prediction > 0.5, tf.int8)  # model outputs probability
-    #     intersection = np.logical_and(target, prediction)
-    #     union = np.logical_or(target, prediction)
-    #     iou_score = np.sum(intersection) / np.sum(union)
-    #     return iou_score
 
     def train(self, df_train, label_cat_train, df_validation, label_cat_validation):
         logging.info('Training ANN model')
