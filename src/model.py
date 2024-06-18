@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from dotenv import load_dotenv, find_dotenv
 sys.path.append(os.getcwd())
-from src.model_class import ANN_model, RF_model, UNET_model, FCN_model
+from src.model_class import ANN_model, RF_model, UNET_model, SEGNET_model
 from src.predict import plot_results
 
 
@@ -15,7 +15,7 @@ from src.predict import plot_results
     "--model_name",
     required=True,
     type=str,
-    help="It can be 'ann','rf', 'unet', 'fcn' or 'sam'.",
+    help="It can be 'ann','rf', 'unet', 'fcn', 'deeplab' or 'segnet'.",
 )
 @click.option(
     "--use_weights",
@@ -28,7 +28,7 @@ def main(model_name, use_weights):
     logging.info('starting model')
 
     # TODO: implement sam
-    model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'fcn': FCN_model()}
+    model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'segnet': SEGNET_model()}
     if model_name in model_dict.keys():
         model = model_dict[model_name]
         model.run(use_weights=use_weights)

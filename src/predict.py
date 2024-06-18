@@ -7,7 +7,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from dotenv import load_dotenv, find_dotenv
 sys.path.append(os.getcwd())
-from src.model_class import ANN_model, RF_model, UNET_model, FCN_model
+from src.model_class import ANN_model, RF_model, UNET_model, SEGNET_model
 
 
 def plot_results(test_image_array, input_test_mask_array, predictions, iou_score, model_name):
@@ -31,7 +31,7 @@ def plot_results(test_image_array, input_test_mask_array, predictions, iou_score
 
     fig.subplots_adjust(wspace=0.2)
     fig.suptitle(f'model={model_name}; iou_score={iou_score:.4};', fontsize=16)
-    fig.savefig(os.path.join(images_folder, f'prediction_model={model_name:.4}_iou={iou_score}.png'))
+    fig.savefig(os.path.join(images_folder, f'prediction_model={model_name}_iou={iou_score:.4}.png'))
     return None
 
 
@@ -48,7 +48,7 @@ def main(model_name):
     input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
 
     # TODO: implement sam
-    model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'fcn': FCN_model()}
+    model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'segnet': SEGNET_model()}
     if model_name in model_dict.keys():
         if model_name == 'rf':
             test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])

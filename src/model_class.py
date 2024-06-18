@@ -81,7 +81,7 @@ class Model(ABC):
         # for test purposes, do not use all data
         if is_test:
             size_train = 10
-            size_val = int(size_train * 0.3)
+            size_val = int(size_train * 0.2)
             X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
                                               y_val[:size_val])
         datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
@@ -315,10 +315,10 @@ class UNET_model(Model):
         self.mlflow_report(self.algorithm, self.model, params, metrics)
 
 
-class FCN_model(Model):
+class SEGNET_model(Model):
     def __init__(self):
-        super().__init__(model_name='FCN')
-        self.algorithm = 'FCN'
+        super().__init__(model_name='SEGNET')
+        self.algorithm = 'SEGNET'
         input_layer = tf.keras.layers.Input(shape=(None, None, 3))
         encoder_list = self.encoder(input_layer)
         output = self.decoder(encoder_list, num_classes=1)
@@ -332,64 +332,65 @@ class FCN_model(Model):
             encoder_input)
         c1 = tf.keras.layers.Dropout(0.1)(c1)
         c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
-        p1 = tf.keras.layers.MaxPooling2D((2, 2))(c1)
+        b1 = tf.keras.layers.BatchNormalization()(c1)
+        r1 = tf.keras.layers.ReLU()(b1)
+        p1 = tf.keras.layers.MaxPooling2D((2, 2))(r1)
 
         c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p1)
         c2 = tf.keras.layers.Dropout(0.1)(c2)
         c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c2)
-        p2 = tf.keras.layers.MaxPooling2D((2, 2))(c2)
+        b2 = tf.keras.layers.BatchNormalization()(c2)
+        r2 = tf.keras.layers.ReLU()(b2)
+        p2 = tf.keras.layers.MaxPooling2D((2, 2))(r2)
 
         c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p2)
         c3 = tf.keras.layers.Dropout(0.2)(c3)
         c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c3)
-        p3 = tf.keras.layers.MaxPooling2D((2, 2))(c3)
+        b3 = tf.keras.layers.BatchNormalization()(c3)
+        r3 = tf.keras.layers.ReLU()(b3)
+        p3 = tf.keras.layers.MaxPooling2D((2, 2))(r3)
 
         c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p3)
         c4 = tf.keras.layers.Dropout(0.2)(c4)
         c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c4)
-        p4 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(c4)
+        b4 = tf.keras.layers.BatchNormalization()(c4)
+        r4 = tf.keras.layers.ReLU()(b4)
+        p4 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(r4)
 
-        c5 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p4)
-        c5 = tf.keras.layers.Dropout(0.2)(c5)
-        c5 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c5)
-        p5 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))(c5)
-
-        c6 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p5)
-        c6 = tf.keras.layers.Dropout(0.3)(c6)
-        c6 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
-
-        u6 = tf.keras.layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c6)
-        c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u6)
-        c6 = tf.keras.layers.Dropout(0.2)(c6)
-        c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
-        return c6
+        c5 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p4)
+        b5 = tf.keras.layers.BatchNormalization()(c5)
+        r5 = tf.keras.layers.ReLU()(b5)
+        c5 = tf.keras.layers.Dropout(0.3)(r5)
+        c5 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c5)
+        return c5
 
     @staticmethod
-    def decoder(encoder_output, num_classes):
-        u7 = tf.keras.layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(encoder_output)
-        c7 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u7)
-        # Adding the result of the deconvolution and convolution layers improves the segmentation detail.
-        c7 = tf.keras.layers.Add()([u7, c7])  # Returns the sum of layers
+    def decoder(encoder_output, num_classes: int):
+        c5 = encoder_output
 
-        u8 = tf.keras.layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(c7)
-        c8 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u8)
-        c8 = tf.keras.layers.Add()([u8, c8])
+        u6 = tf.keras.layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c5)
+        u6 = tf.keras.layers.BatchNormalization()(u6)
+        u6 = tf.keras.layers.ReLU()(u6)
 
-        u9 = tf.keras.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c8)
-        c9 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u9)
-        c9 = tf.keras.layers.Add()([u9, c9])
+        u7 = tf.keras.layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(u6)
+        u7 = tf.keras.layers.BatchNormalization()(u7)
+        u7 = tf.keras.layers.ReLU()(u7)
 
-        u10 = tf.keras.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c9)
-        c10 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u10)
-        c10 = tf.keras.layers.Add()([u10, c10])
+        u8 = tf.keras.layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(u7)
+        u8 = tf.keras.layers.BatchNormalization()(u8)
+        u8 = tf.keras.layers.ReLU()(u8)
 
-        outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='sigmoid')(c10)
+        u9 = tf.keras.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(u8)
+        u9 = tf.keras.layers.BatchNormalization()(u9)
+        u9 = tf.keras.layers.ReLU()(u9)
+
+        outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='sigmoid')(u9)
         return outputs
 
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 10, "epochs": 30}   # "epochs": 8
+        params = {"batch_size": 2, "epochs": 30}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
