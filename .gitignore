@@ -10,3 +10,4 @@ mlruns/
 .DS_Store
 src/__pycache__/
 *.pt
+model/SAM/*

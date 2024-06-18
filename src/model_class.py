@@ -65,6 +65,8 @@ class Model(ABC):
 
     def load_train_val_data(self, model, is_test=False):
         """
+        TODO: use image_dataset_from_directory to get a tf.dataset.
+            This will improve memory performance.
         load target and validation data from Dataset folder
         :param model:
         :return:
