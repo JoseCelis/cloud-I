@@ -11,3 +11,4 @@ mlruns/
 src/__pycache__/
 *.pt
 model/SAM/*
+model/

@@ -58,6 +58,7 @@ def generate_labels_files(mask_path: str, label_path: str, cloud_class: str):
 
         if labels is not None:
             label_fname = mask_fname.split("/")[-1].split(".")[0] + ".txt"
+            label_fname = label_fname.replace("MASK_", "RGB_")
             with open(os.path.join(label_path, label_fname), "w") as label_file:
                 for mask_coords in labels:
                     label_file.write(" ".join(mask_coords) + "\n")
