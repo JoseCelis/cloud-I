@@ -1,5 +1,6 @@
 .idea/
 data/
+Dataset/
 images/
 preprocessed_data/
 settings/coords_config.yaml
@@ -8,3 +9,6 @@ Pipfile.lock
 mlruns/
 .DS_Store
 src/__pycache__/
+*.pt
+model/SAM/*
+model/
