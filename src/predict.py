@@ -43,9 +43,12 @@ def plot_results(test_image_array, input_test_mask_array, predictions, iou_score
     help="It can be 'ann','rf', 'unet' or 'segnet'.",
 )
 def main(model_name):
-    logging.info('starting model')
-    test_image_array = np.load(f'Dataset_npy/test/RGB_4481.npy')
-    input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
+    logging.info('starting prediction')
+    test_folder = 'Dataset/test/'
+    image = tf.keras.utils.load_img(os.path.join(test_folder, 'RGB_4481.png'))
+    mask = tf.keras.utils.load_img(os.path.join(test_folder, 'MASK_4481.png'), color_mode='grayscale')
+    test_image_array = tf.keras.utils.img_to_array(image, dtype=np.uint8)
+    input_test_mask_array = tf.keras.utils.img_to_array(mask, dtype=bool).astype(np.uint8)
 
     # TODO: implement sam
     model_dict = {'ann': ANN_model(), 'rf': RF_model(), 'unet': UNET_model(), 'segnet': SEGNET_model()}
