@@ -3,6 +3,7 @@ import sys
 import rasterio
 import numpy as np
 from tqdm import tqdm
+import tensorflow as tf
 
 sys.path.append(os.getcwd())
 
@@ -14,7 +15,7 @@ def list_image_files(images_folder: str):
     :return:
     """
     bands_clp_list = [[os.path.join(images_folder, path, 'bands.tif'), os.path.join(images_folder, path, 'CLP.tif')]
-                      for path in os.listdir(images_folder)]
+                      for path in os.listdir(images_folder) if "." not in path]
     return bands_clp_list
 
 
@@ -103,28 +104,37 @@ def augment_data(image, mask):
 
 
 def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, n_files):
+    image_folder = preprocessed_image_folder.format(image_or_mask='images')
+    mask_folder = preprocessed_image_folder.format(image_or_mask='masks')
     for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
         counter_batch = i * n_files + counter
-        np.save(os.path.join(preprocessed_image_folder, f"RGB_{counter_batch}.npy"), image_maks_pair[0])
-        np.save(os.path.join(preprocessed_image_folder, f"MASK_{counter_batch}.npy"), image_maks_pair[1])
+        img = tf.keras.utils.array_to_img(image_maks_pair[0])
+        img.save(os.path.join(image_folder, f"{counter_batch}.png"))
+        mask = tf.keras.utils.array_to_img(image_maks_pair[1])
+        mask.save(os.path.join(mask_folder, f"{counter_batch}.png"))
     return None
 
 
 def main():
-    input_images_folder = 'data'
-    preprocessed_image_folder = 'preprocessed_data'
+    input_images_folder = 'data'  # images are in Digital Numbers (DN)
+    dataset_folder = 'Dataset/'
+    folder_structure_list = ['Dataset/images/train/', 'Dataset/images/val/', 'Dataset/masks/train/',
+                             'Dataset/masks/val/']
+    [os.makedirs(folder, exist_ok=True) for folder in folder_structure_list]
+
     bands = [3, 2, 1]
     threshold_prob = 0.4  # bit we use to detect as truth in the mask files
 
     images_list = list_image_files(input_images_folder)
-    os.makedirs(preprocessed_image_folder, exist_ok=True)
     for counter, image_mask_pair in tqdm(enumerate(images_list)):
         image, _ = read_crop(image_mask_pair[0], bands=bands)
         mask, _ = read_crop(image_mask_pair[1], bands=[1])
         image = preprocess_image(image)
         mask = preprocess_mask(mask, threshold_prob)
         aug_image_list, aug_mask_list = augment_data(image, mask)
-        save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, len(images_list))
+        train_val_folder = 'train/' if counter < 0.8 * len(images_list) else 'val/'
+        output_folder = os.path.join(dataset_folder, '{image_or_mask}/', train_val_folder)
+        save_image_files(output_folder, counter, aug_image_list, aug_mask_list, len(images_list))
 
 
 if __name__ == "__main__":

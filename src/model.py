@@ -33,8 +33,11 @@ def main(model_name, use_weights):
         model = model_dict[model_name]
         model.run(use_weights=use_weights)
 
-        test_image_array = np.load(f'Dataset_npy/test/RGB_4481.npy')
-        input_test_mask_array = np.load(f'Dataset_npy/test/MASK_4481.npy')
+        test_folder = 'Dataset/test/'
+        image = tf.keras.utils.load_img(os.path.join(test_folder, 'RGB_4481.png'))
+        mask = tf.keras.utils.load_img(os.path.join(test_folder, 'MASK_4481.png'), color_mode='grayscale')
+        test_image_array = tf.keras.utils.img_to_array(image, dtype=np.uint8)
+        input_test_mask_array = tf.keras.utils.img_to_array(mask, dtype=bool).astype(np.uint8)
         if model_name == 'rf':
             test_image_array = test_image_array.reshape(-1, test_image_array.shape[-1])
             test_mask_array = np.ravel(input_test_mask_array.reshape(-1, input_test_mask_array.shape[-1]))

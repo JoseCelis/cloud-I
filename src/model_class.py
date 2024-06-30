@@ -16,7 +16,7 @@ class Model(ABC):
     def __init__(self, model_name):
         self.exp_name = os.getenv("MLFLOW_EXPERIMENT_NAME", f'exp_{model_name}')
         mlflow.set_experiment(experiment_name=self.exp_name)
-        self.data_path = 'Dataset_npy/'
+        self.data_path = 'Dataset/'
         self.seed = int(os.getenv('PYTHONHASHSEED', 30))
         np.random.seed(self.seed)
         os.makedirs('models', exist_ok=True)
@@ -42,7 +42,6 @@ class Model(ABC):
     def list_image_files(self):
         """
         list all files in the images_folder to create the X and target files list
-        :param images_folder:
         :return:
         """
         rgb_files_train = os.listdir(os.path.join(self.data_path, 'images/train/'))
@@ -57,8 +56,11 @@ class Model(ABC):
         datasets_list = []
         targets_list = []
         for image_filename, target_filename in list(zip(X, y)):
-            image_array = np.load(os.path.join(self.data_path, f'images/{subset}/', image_filename))
-            target_array = np.load(os.path.join(self.data_path, f'masks/{subset}/', target_filename))
+            image = tf.keras.utils.load_img(os.path.join(self.data_path, f'images/{subset}/', image_filename))
+            target = tf.keras.utils.load_img(os.path.join(self.data_path, f'masks/{subset}/', target_filename),
+                                             color_mode='grayscale')
+            image_array = tf.keras.utils.img_to_array(image, dtype=np.uint8)
+            target_array = tf.keras.utils.img_to_array(target, dtype=bool).astype(np.uint8)
             if (np.sum(np.isnan(image_array)) == 0) and (np.sum(np.isinf(image_array)) == 0):
                 if model in ['ANN', 'RF']:  # for these two models append l=as tables
                     datasets_list.append(image_array.reshape(-1, image_array.shape[-1]))
@@ -72,6 +74,8 @@ class Model(ABC):
 
     def load_train_val_data(self, model, is_test=True):
         """
+        TODO: use image_dataset_from_directory to get a tf.dataset.
+            This will improve memory performance.
         load target and validation data from Dataset folder
         :param model:
         :return:
@@ -142,7 +146,7 @@ class ANN_model(Model):
         self.model.add(Dense(units=1, activation='sigmoid'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
-        params = {"batch_size": 10240, "epochs": 2}  # "epochs": 8
+        params = {"batch_size": 10240, "epochs": 8}  # "epochs": 8
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
