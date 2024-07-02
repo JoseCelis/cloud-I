@@ -1,4 +1,5 @@
 import os
+import cv2
 import sys
 import rasterio
 import numpy as np
@@ -103,15 +104,54 @@ def augment_data(image, mask):
     return image_list, mask_list
 
 
+def from_mask_image_to_coordinates(mask_file_name: str, cloud_class: str):
+    """
+    It converts a mask image to many x, y coordinates.
+    Used for training a SAM model.
+    See: https://www.tutorialspoint.com/opencv_python/opencv_python_image_contours.htm
+    See: https://docs.ultralytics.com/datasets/segment/
+    """
+    image_mask = cv2.imread(mask_file_name, 0)  # 0 for gray scale
+    height, width = image_mask.shape
+
+    if np.any(image_mask, where=255):  # convert if there are clouds
+        image_mask = cv2.Canny(image_mask, 30, 200)  # Canny edge detection
+
+        contours, _ = cv2.findContours(
+            image_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_NONE
+        )
+
+        mask_coordinates = []
+        for ncontour in range(len(contours)):
+            contour = contours[ncontour]
+            normalized_contour = contour.reshape(-1, 2) / [width, height]
+            flatten_contour = normalized_contour.flatten()
+            flatten_contour = np.insert(flatten_contour.astype("str"), 0, cloud_class)
+            mask_coordinates.append(flatten_contour)
+    else:
+        mask_coordinates = None
+    return mask_coordinates
+
+
 def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, n_files):
     image_folder = preprocessed_image_folder.format(image_or_mask='images')
     mask_folder = preprocessed_image_folder.format(image_or_mask='masks')
     for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
         counter_batch = i * n_files + counter
         img = tf.keras.utils.array_to_img(image_maks_pair[0])
-        img.save(os.path.join(image_folder, f"{counter_batch}.png"))
+        img_file_name = os.path.join(image_folder, f"{counter_batch}.png")
+        img.save(img_file_name)
         mask = tf.keras.utils.array_to_img(image_maks_pair[1])
-        mask.save(os.path.join(mask_folder, f"{counter_batch}.png"))
+        mask_file_name = os.path.join(mask_folder, f"{counter_batch}.png")
+        mask.save(mask_file_name)
+        labels = from_mask_image_to_coordinates(mask_file_name, cloud_class=str(0))
+        if labels is not None:
+            label_file_name = mask_file_name.replace('masks', 'labels').replace('png', 'txt')
+            with open(label_file_name, "w") as label_file:
+                for mask_coords in labels:
+                    label_file.write(" ".join(mask_coords) + "\n")
     return None
 
 
@@ -119,7 +159,7 @@ def main():
     input_images_folder = 'data'  # images are in Digital Numbers (DN)
     dataset_folder = 'Dataset/'
     folder_structure_list = ['Dataset/images/train/', 'Dataset/images/val/', 'Dataset/masks/train/',
-                             'Dataset/masks/val/']
+                             'Dataset/masks/val/', 'Dataset/labels/train/', 'Dataset/labels/val/']
     [os.makedirs(folder, exist_ok=True) for folder in folder_structure_list]
 
     bands = [3, 2, 1]
