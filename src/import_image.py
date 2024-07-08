@@ -74,14 +74,16 @@ def extract_tar_file(tar_file, path):
 
 
 def main():
-    images_folder = 'data'
+    images_folder = "data"
+    os.makedirs(images_folder, exist_ok=True)
+
     sh_config = load_credentials()
     bbox_dicts = read_yaml_file("settings/coordinates.yaml")
     for bbox_dict in tqdm(bbox_dicts):
-        bbox = BBox(tuple(bbox_dict['coords']), crs=CRS(bbox_dict['CRS']))
-        request_image_and_mask_to_sentinel2_L2A(bbox, bbox_dict['date'], sh_config, data_folder=images_folder)
-    logging.info('Extracting .tar files . . .')
-    [extract_tar_file('response.tar', os.path.join(images_folder, path)) for path in os.listdir(images_folder)]
+        bbox = BBox(tuple(bbox_dict["coords"]), crs=CRS(bbox_dict["CRS"]))
+        request_image_and_mask_to_sentinel2_L2A(bbox, bbox_dict["date"], sh_config, data_folder=images_folder)
+    logging.info("Extracting .tar files . . .")
+    [extract_tar_file("response.tar", os.path.join(images_folder, path)) for path in os.listdir(images_folder)]
 
 
 if __name__ == "__main__":
