@@ -65,8 +65,6 @@ class Model(ABC):
 
     def load_train_val_data(self, model, is_test=False):
         """
-        TODO: use image_dataset_from_directory to get a tf.dataset.
-            This will improve memory performance.
         load target and validation data from Dataset folder
         :param model:
         :return:
@@ -76,7 +74,7 @@ class Model(ABC):
         # for test purposes, do not use all data
         if is_test:
             size_train = 12
-            size_val = int(size_train * 0.3)
+            size_val = int(size_train * 0.2)
             X_train, y_train, X_val, y_val = (X_train[:size_train], y_train[:size_train], X_val[:size_val],
                                               y_val[:size_val])
         datasets_train, targets_train = self.append_lists_data_and_target(X_train, y_train, model, subset='train')
@@ -100,6 +98,7 @@ class Model(ABC):
             "train iou": np.round(model.history.history["intersection_over_union"][-1], 2),
             "validation iou": np.round(model.history.history["val_intersection_over_union"][-1], 2)
         }
+
 
 class ANN_model(Model):
     def __init__(self):
