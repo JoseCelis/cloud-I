@@ -5,11 +5,12 @@ import logging
 import numpy as np
 from abc import ABC
 import tensorflow as tf
-from sklearn.ensemble import RandomForestClassifier
-from keras.models import Sequential
+from ultralytics import YOLO
 from keras.layers import Dense
 from time import gmtime, strftime
 from keras.optimizers import Adam
+from keras.models import Sequential
+from sklearn.ensemble import RandomForestClassifier
 
 
 class Model(ABC):
@@ -108,20 +109,20 @@ class Model(ABC):
             "validation iou": np.round(model.history.history["val_intersection_over_union"][-1], 2)
         }
 
-    def load_saved_model(self, algorithm):
+    def load_saved_model(self):
         logging.info('Doing predictions')
-        if algorithm != 'RF':
-            model = tf.keras.models.load_model(os.path.join('models', f'{algorithm}.keras'),
+        if self.algorithm != 'RF':
+            model = tf.keras.models.load_model(os.path.join('models', f'{self.algorithm}.keras'),
                                                custom_objects={'intersection_over_union': self.intersection_over_union},
                                                safe_mode=False)
         else:
-            model = joblib.load(os.path.join('models', f'{algorithm}.pkl'))
+            model = joblib.load(os.path.join('models', f'{self.algorithm}.pkl'))
         return model
 
     def make_predictions(self, df_validation, use_saved_model=True):
         logging.info('Doing predictions')
         if use_saved_model:
-            loaded_model = self.load_saved_model(self.algorithm)
+            loaded_model = self.load_saved_model()
             predictions = loaded_model.predict(df_validation)
         else:
             predictions = self.model.predict(df_validation)
@@ -401,3 +402,44 @@ class SEGNET_model(Model):
         params = self.train(df_train, targets_train, df_val, targets_val)
         metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
+
+
+class YOLO_model():
+    def __init__(self):
+        self.data_path = 'Dataset/'
+        self.algorithm = 'YOLO'
+        self.path_model = os.path.join("models/", self.algorithm, "segment", "train", "weights")
+        os.makedirs(self.path_model, exist_ok=True)
+        self.model = YOLO("yolov8n-seg.pt")  # pre-trained model
+
+    def train(self, data_config):
+        epochs = 15
+        self.model.train(data=data_config, epochs=epochs)
+        params = {"epochs": epochs}
+        return params
+
+    def make_predictions(self, image_test, use_saved_model=True):
+        logging.info('Doing predictions')
+        if use_saved_model:
+            saved_model = YOLO(os.path.join(self.path_model, "best.pt"))
+            results = saved_model.predict(source=image_test, conf=0.0001, imgsz=image_test.shape[0])
+        else:
+            results = self.model.predict(image_test, conf=0.0001, imgsz=image_test.shape[0])
+        mask = results[0].masks  # [0] because it is only one test image
+        predictions = mask.data.sum(axis=0)
+        predictions = predictions.numpy()
+        predictions = (predictions >= 1).astype(np.int8)
+        return predictions
+
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        target = tf.cast(np.squeeze(target), dtype=tf.float32)
+        prediction = tf.cast(prediction > 0.5, dtype=tf.float32)  # model outputs probability
+        intersection = tf.reduce_sum(tf.multiply(target, prediction))  # logical and in tf
+        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection  # logical or in tf
+        iou_score = intersection / union
+        return iou_score
+
+    def run(self, use_weights=None):
+        data_config = os.path.join(self.data_path, "dataset.yaml")
+        params = self.train(data_config)
