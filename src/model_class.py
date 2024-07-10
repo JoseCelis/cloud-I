@@ -406,7 +406,7 @@ class SEGNET_model(Model):
 
 class YOLO_model():
     def __init__(self):
-        self.data_path = 'Dataset/'
+        self.data_path = 'settings/'
         self.algorithm = 'YOLO'
         self.path_model = os.path.join("models/", self.algorithm, "segment", "train", "weights")
         os.makedirs(self.path_model, exist_ok=True)
