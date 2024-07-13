@@ -145,7 +145,7 @@ class ANN_model(Model):
         self.model.add(Dense(units=1, activation='sigmoid'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
-        params = {"batch_size": 10240, "epochs": 8}  # "epochs": 8
+        params = {"batch_size": 10240, "epochs": 100}  # 10240 corresponds to 10 images
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
@@ -291,7 +291,7 @@ class UNET_model(Model):
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 10, "epochs": 30}
+        params = {"batch_size": 10, "epochs": 100}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -385,7 +385,7 @@ class SEGNET_model(Model):
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 2, "epochs": 30}
+        params = {"batch_size": 10, "epochs": 100}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -413,7 +413,7 @@ class YOLO_model():
         self.model = YOLO("yolov8n-seg.pt")  # pre-trained model
 
     def train(self, data_config):
-        epochs = 15
+        epochs = 100
         self.model.train(data=data_config, epochs=epochs)
         params = {"epochs": epochs}
         return params
