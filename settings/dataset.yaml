@@ -1,4 +1,4 @@
-path: /Users/anamabo/Documents/cloud_detection/cloud-I/Dataset/  # dataset root dir
+path: <Specify here the path of Dataset/>  # dataset root dir
 train: images/train  # train images (relative to 'path') 4 images
 val: images/val  # val images (relative to 'path') 4 images
 

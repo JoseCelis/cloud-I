@@ -70,7 +70,7 @@ def preprocess_image(image: np.array):
     return norm_log_image
 
 
-def preprocess_mask(mask: np.array, threshold_prob: float):
+def convert_cloud_probabilities_to_mask(mask: np.array, threshold_prob: float):
     """
     Creates binary file using threshold_prob
     :param mask:
@@ -171,11 +171,11 @@ def main():
     threshold_prob = 0.4  # bit we use to detect as truth in the mask files
 
     images_list = list_image_files(input_images_folder)
-    for counter, image_mask_pair in tqdm(enumerate(images_list)):
-        image, _ = read_crop(image_mask_pair[0], bands=bands)
-        mask, _ = read_crop(image_mask_pair[1], bands=[1])
+    for counter, image_cloudprob_pair in tqdm(enumerate(images_list)):
+        image, _ = read_crop(image_cloudprob_pair[0], bands=bands)
+        cloud_probs, _ = read_crop(image_cloudprob_pair[1], bands=[1])
         image = preprocess_image(image)
-        mask = preprocess_mask(mask, threshold_prob)
+        mask = convert_cloud_probabilities_to_mask(cloud_probs, threshold_prob)
         aug_image_list, aug_mask_list = augment_data(image, mask)
         train_val_folder = 'train/' if counter < train_val_split * len(images_list) else 'val/'
         output_folder = os.path.join(dataset_folder, '{image_mask_or_label}/', train_val_folder)

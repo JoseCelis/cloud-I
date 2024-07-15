@@ -70,13 +70,13 @@ class Model(ABC):
                     datasets_list.append(image_array)
                     targets_list.append(target_array)
             else:
-                print("isna", image_filename)
+                logging.warning(f"isna {image_filename}")
         return datasets_list, targets_list
 
     def load_train_val_data(self, model, is_test=False):
         """
         load target and validation data from Dataset folder
-        :param model:
+        :param model: string. Name of the algorithm used.
         :return:
         """
         logging.info('reading processed images and masks.')
