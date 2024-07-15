@@ -1,4 +1,5 @@
 import os
+import cv2
 import sys
 import rasterio
 import numpy as np
@@ -69,7 +70,7 @@ def preprocess_image(image: np.array):
     return norm_log_image
 
 
-def preprocess_mask(mask: np.array, threshold_prob: float):
+def convert_cloud_probabilities_to_mask(mask: np.array, threshold_prob: float):
     """
     Creates binary file using threshold_prob
     :param mask:
@@ -84,8 +85,8 @@ def preprocess_mask(mask: np.array, threshold_prob: float):
 
 def augment_data(image, mask):
     """
-    We perform rotations and flips to increase the number of images, for every image we read, we get 5 extra ones
-    90, 180, 270, vertical_flip, horizontal_flip
+    We perform rotations and flips to increase the number of images. For every image we read, we get 5 extra ones:
+    90, 180 and 270 degrees rotations, and vertical and horizontal flip. Giving a total of six images.
     """
     image_list, mask_list = [], []
     image_list.append(image)
@@ -103,15 +104,58 @@ def augment_data(image, mask):
     return image_list, mask_list
 
 
-def save_image_files(preprocessed_image_folder, counter, aug_image_list, aug_mask_list, n_files):
-    image_folder = preprocessed_image_folder.format(image_or_mask='images')
-    mask_folder = preprocessed_image_folder.format(image_or_mask='masks')
-    for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
-        counter_batch = i * n_files + counter
-        img = tf.keras.utils.array_to_img(image_maks_pair[0])
-        img.save(os.path.join(image_folder, f"{counter_batch}.png"))
-        mask = tf.keras.utils.array_to_img(image_maks_pair[1])
-        mask.save(os.path.join(mask_folder, f"{counter_batch}.png"))
+def from_mask_image_to_coordinates(image_mask, cloud_class: str):
+    """
+    It converts a mask image to many x, y coordinates.
+    Used for training a SAM model.
+    See: https://www.tutorialspoint.com/opencv_python/opencv_python_image_contours.htm
+    See: https://docs.ultralytics.com/datasets/segment/
+    """
+    image_mask = image_mask * 255  # multiply with 255 for cv process
+    height, width = np.squeeze(image_mask).shape
+
+    if np.any(image_mask, where=255):  # convert if there are clouds
+        image_mask = cv2.Canny(image_mask, 30, 200)  # Canny edge detection
+
+        contours, _ = cv2.findContours(
+            image_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_NONE
+        )
+
+        mask_coordinates = []
+        for ncontour in range(len(contours)):
+            contour = contours[ncontour]
+            normalized_contour = contour.reshape(-1, 2) / [width, height]
+            flatten_contour = normalized_contour.flatten()
+            flatten_contour = np.insert(flatten_contour.astype("str"), 0, cloud_class)
+            mask_coordinates.append(flatten_contour)
+    else:
+        mask_coordinates = None
+    return mask_coordinates
+
+
+def save_image_files(preprocessed_folder, counter_batch, image_array, mask_array, labels):
+    """
+    Save augmented data: images, masks and labels.
+    If originally we have 100 images, the original image 'k' will be saved to the file 'k.png' and the augmented data
+    in the files '100+k.png', '200+k.png', '300+k.png', '400+k.png', '500+k.png'. If the original image belongs to the
+    train, all augmented images will be saved in the train folder as well.
+    """
+    image_folder = preprocessed_folder.format(image_mask_or_label='images')
+    mask_folder = preprocessed_folder.format(image_mask_or_label='masks')
+    label_folder = preprocessed_folder.format(image_mask_or_label='labels')
+    img = tf.keras.utils.array_to_img(image_array)
+    img_file_name = os.path.join(image_folder, f"{counter_batch}.png")
+    img.save(img_file_name)
+    mask = tf.keras.utils.array_to_img(mask_array)
+    mask_file_name = os.path.join(mask_folder, f"{counter_batch}.png")
+    mask.save(mask_file_name)
+    if labels is not None:
+        label_file_name = os.path.join(label_folder, f"{counter_batch}.txt")
+        with open(label_file_name, "w") as label_file:
+            for mask_coords in labels:
+                label_file.write(" ".join(mask_coords) + "\n")
     return None
 
 
@@ -119,22 +163,26 @@ def main():
     input_images_folder = 'data'  # images are in Digital Numbers (DN)
     dataset_folder = 'Dataset/'
     folder_structure_list = ['Dataset/images/train/', 'Dataset/images/val/', 'Dataset/masks/train/',
-                             'Dataset/masks/val/']
+                             'Dataset/masks/val/', 'Dataset/labels/train/', 'Dataset/labels/val/']
     [os.makedirs(folder, exist_ok=True) for folder in folder_structure_list]
+    train_val_split = 0.8  # we are using 80-20 train validation split
 
-    bands = [3, 2, 1]
+    bands = [3, 2, 1]  # RGB bands of the original tiff file
     threshold_prob = 0.4  # bit we use to detect as truth in the mask files
 
     images_list = list_image_files(input_images_folder)
-    for counter, image_mask_pair in tqdm(enumerate(images_list)):
-        image, _ = read_crop(image_mask_pair[0], bands=bands)
-        mask, _ = read_crop(image_mask_pair[1], bands=[1])
+    for counter, image_cloudprob_pair in tqdm(enumerate(images_list)):
+        image, _ = read_crop(image_cloudprob_pair[0], bands=bands)
+        cloud_probs, _ = read_crop(image_cloudprob_pair[1], bands=[1])
         image = preprocess_image(image)
-        mask = preprocess_mask(mask, threshold_prob)
+        mask = convert_cloud_probabilities_to_mask(cloud_probs, threshold_prob)
         aug_image_list, aug_mask_list = augment_data(image, mask)
-        train_val_folder = 'train/' if counter < 0.8 * len(images_list) else 'val/'
-        output_folder = os.path.join(dataset_folder, '{image_or_mask}/', train_val_folder)
-        save_image_files(output_folder, counter, aug_image_list, aug_mask_list, len(images_list))
+        train_val_folder = 'train/' if counter < train_val_split * len(images_list) else 'val/'
+        output_folder = os.path.join(dataset_folder, '{image_mask_or_label}/', train_val_folder)
+        for i, image_maks_pair in enumerate(zip(aug_image_list, aug_mask_list)):
+            counter_batch = i * len(images_list) + counter
+            label = from_mask_image_to_coordinates(image_maks_pair[1], cloud_class=str(0))
+            save_image_files(output_folder, counter_batch, image_maks_pair[0], image_maks_pair[1], label)
 
 
 if __name__ == "__main__":

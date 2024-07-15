@@ -5,11 +5,12 @@ import logging
 import numpy as np
 from abc import ABC
 import tensorflow as tf
-from sklearn.ensemble import RandomForestClassifier
-from keras.models import Sequential
+from ultralytics import YOLO
 from keras.layers import Dense
 from time import gmtime, strftime
 from keras.optimizers import Adam
+from keras.models import Sequential
+from sklearn.ensemble import RandomForestClassifier
 
 
 class Model(ABC):
@@ -69,15 +70,13 @@ class Model(ABC):
                     datasets_list.append(image_array)
                     targets_list.append(target_array)
             else:
-                print("isna", image_filename)
+                logging.warning(f"isna {image_filename}")
         return datasets_list, targets_list
 
-    def load_train_val_data(self, model, is_test=True):
+    def load_train_val_data(self, model, is_test=False):
         """
-        TODO: use image_dataset_from_directory to get a tf.dataset.
-            This will improve memory performance.
         load target and validation data from Dataset folder
-        :param model:
+        :param model: string. Name of the algorithm used.
         :return:
         """
         logging.info('reading processed images and masks.')
@@ -110,20 +109,20 @@ class Model(ABC):
             "validation iou": np.round(model.history.history["val_intersection_over_union"][-1], 2)
         }
 
-    def load_saved_model(self, algorithm):
+    def load_saved_model(self):
         logging.info('Doing predictions')
-        if algorithm != 'RF':
-            model = tf.keras.models.load_model(os.path.join('models', f'{algorithm}.keras'),
+        if self.algorithm != 'RF':
+            model = tf.keras.models.load_model(os.path.join('models', f'{self.algorithm}.keras'),
                                                custom_objects={'intersection_over_union': self.intersection_over_union},
                                                safe_mode=False)
         else:
-            model = joblib.load(os.path.join('models', f'{algorithm}.pkl'))
+            model = joblib.load(os.path.join('models', f'{self.algorithm}.pkl'))
         return model
 
     def make_predictions(self, df_validation, use_saved_model=True):
         logging.info('Doing predictions')
         if use_saved_model:
-            loaded_model = self.load_saved_model(self.algorithm)
+            loaded_model = self.load_saved_model()
             predictions = loaded_model.predict(df_validation)
         else:
             predictions = self.model.predict(df_validation)
@@ -146,7 +145,7 @@ class ANN_model(Model):
         self.model.add(Dense(units=1, activation='sigmoid'))
         self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=[self.intersection_over_union])
         self.model.summary()
-        params = {"batch_size": 10240, "epochs": 8}  # "epochs": 8
+        params = {"batch_size": 10240, "epochs": 100}  # 10240 corresponds to 10 images
         self.model.fit(df_train, label_cat_train, validation_data=(df_validation, label_cat_validation),
                        workers=-1, **params)
         return params
@@ -292,7 +291,7 @@ class UNET_model(Model):
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 10, "epochs": 30}
+        params = {"batch_size": 10, "epochs": 100}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -386,7 +385,7 @@ class SEGNET_model(Model):
     def train(self, X_train, y_train, X_validation, y_validation):
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=19, monitor='val_loss'),
                      tf.keras.callbacks.TensorBoard(log_dir='logs')]
-        params = {"batch_size": 2, "epochs": 30}
+        params = {"batch_size": 10, "epochs": 100}
         self.model.fit(X_train, y_train, validation_data=(X_validation, y_validation), callbacks=callbacks,
                        **params)
         return params
@@ -403,3 +402,44 @@ class SEGNET_model(Model):
         params = self.train(df_train, targets_train, df_val, targets_val)
         metrics = self.get_metrics_tf(self.model)
         self.mlflow_report(self.algorithm, self.model, params, metrics)
+
+
+class YOLO_model():
+    def __init__(self):
+        self.data_path = 'settings/'
+        self.algorithm = 'YOLO'
+        self.path_model = os.path.join("models/", self.algorithm, "segment", "train", "weights")
+        os.makedirs(self.path_model, exist_ok=True)
+        self.model = YOLO("yolov8n-seg.pt")  # pre-trained model
+
+    def train(self, data_config):
+        epochs = 100
+        self.model.train(data=data_config, epochs=epochs)
+        params = {"epochs": epochs}
+        return params
+
+    def make_predictions(self, image_test, use_saved_model=True):
+        logging.info('Doing predictions')
+        if use_saved_model:
+            saved_model = YOLO(os.path.join(self.path_model, "best.pt"))
+            results = saved_model.predict(source=image_test, conf=0.0001, imgsz=image_test.shape[0])
+        else:
+            results = self.model.predict(image_test, conf=0.0001, imgsz=image_test.shape[0])
+        mask = results[0].masks  # [0] because it is only one test image
+        predictions = mask.data.sum(axis=0)
+        predictions = predictions.numpy()
+        predictions = (predictions >= 1).astype(np.int8)
+        return predictions
+
+    @staticmethod
+    def intersection_over_union(target, prediction):
+        target = tf.cast(np.squeeze(target), dtype=tf.float32)
+        prediction = tf.cast(prediction > 0.5, dtype=tf.float32)  # model outputs probability
+        intersection = tf.reduce_sum(tf.multiply(target, prediction))  # logical and in tf
+        union = tf.reduce_sum(target) + tf.reduce_sum(prediction) - intersection  # logical or in tf
+        iou_score = intersection / union
+        return iou_score
+
+    def run(self, use_weights=None):
+        data_config = os.path.join(self.data_path, "dataset.yaml")
+        params = self.train(data_config)

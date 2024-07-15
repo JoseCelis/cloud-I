@@ -1,0 +1,7 @@
+path: <Specify here the path of Dataset/>  # dataset root dir
+train: images/train  # train images (relative to 'path') 4 images
+val: images/val  # val images (relative to 'path') 4 images
+
+# Classes
+names:
+  0: cloud
