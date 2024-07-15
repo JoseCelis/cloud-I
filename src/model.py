@@ -74,7 +74,7 @@ def prepare_test_data(model_name):
     "--train_model",
     required=False,
     type=bool,
-    default=False,
+    default=True,
     help="Do you want to train the model?. default=True",
 )
 def main(model_name, use_weights, train_model):
